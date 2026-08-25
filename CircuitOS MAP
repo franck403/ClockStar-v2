@@ -1,0 +1,765 @@
+=== Clockstar_v2 diagnostic dump ===
+cs module file: Clockstar_v2/__init__.py
+cs top-level attrs: ['BM8563', 'Buttons', 'Display', 'I2C', 'InputGPIO', 'LSM6DS3TR', 'PanelST7735_128x128', 'Piezo', 'Pin', 'Pins', 'RGB_LED', 'SPI', 'Signal', 'TFT', 'backlight', 'begin', 'btn_pins', 'buttons', 'const', 'display', 'efuse', 'i2c', 'imu', 'panel', 'piezo', 'pins', 'revision', 'rgb', 'rtc', 'spiTFT']
+
+=== cs.pins.* ===
+  cs.pins.BATT           = 1
+  cs.pins.BL             = 0
+  cs.pins.BUZZ           = 12
+  cs.pins.BtnBack        = 16
+  cs.pins.BtnDown        = 14
+  cs.pins.BtnSelect      = 15
+  cs.pins.BtnUp          = 13
+  cs.pins.CHARGE         = 2
+  cs.pins.I2C_SCL        = 8
+  cs.pins.I2C_SDA        = 7
+  cs.pins.LED_B          = 11
+  cs.pins.LED_G          = 10
+  cs.pins.LED_R          = 9
+  cs.pins.Rev2Map        = {0: 9, 1: 10, 2: 36, 3: 48, 4: 34, 5: 33, 6: 47, 7: 4, 8: 5, 9: 8, 10: 7, 11: 6, 12: 11, 13: 40, 14: 38, 15: 39, 16: 37}
+  cs.pins.TFT_DC         = 5
+  cs.pins.TFT_MOSI       = 4
+  cs.pins.TFT_RST        = 6
+  cs.pins.TFT_SCK        = 3
+  cs.pins.currentMap     = {0: 9, 1: 10, 2: 36, 3: 48, 4: 34, 5: 33, 6: 47, 7: 4, 8: 5, 9: 8, 10: 7, 11: 6, 12: 11, 13: 40, 14: 38, 15: 39, 16: 37}
+  cs.pins.get            = <bound_method>
+
+=== cs.pins.get(...) probe ===
+cs.pins.CHARGE (raw attr) = 2
+Pin CHARGE not in map
+  cs.pins.get('CHARGE')            = -1
+  cs.pins.get(cs.pins.CHARGE)      = 36
+  cs.pins.get(2)                   = 36
+  currentMap[2] = 36
+  revision = 2
+  -> if get(...) returns something DIFFERENT from the raw CHARGE attr, CHARGE is a logical index and must go through get()/currentMap before being passed to machine.Pin(). If get() errors or just echoes back 2, the remap likely doesn't apply to CHARGE and GPIO2 may genuinely be the intended (but wrong-behaving) pin.
+
+--- full recursive module dump (depth<=2) ---
+=== cs (<class 'module'>) ===
+  BM8563         -> nested type
+  === cs.BM8563 (<class 'type'>) ===
+    ADDR           = 81
+    begin          -> nested function
+    === cs.BM8563.begin (<class 'function'>) ===
+    get_day        -> nested function
+    === cs.BM8563.get_day (<class 'function'>) ===
+    get_hours      -> nested function
+    === cs.BM8563.get_hours (<class 'function'>) ===
+    get_minutes    -> nested function
+    === cs.BM8563.get_minutes (<class 'function'>) ===
+    get_month      -> nested function
+    === cs.BM8563.get_month (<class 'function'>) ===
+    get_seconds    -> nested function
+    === cs.BM8563.get_seconds (<class 'function'>) ===
+    get_time       -> nested function
+    === cs.BM8563.get_time (<class 'function'>) ===
+    get_year       -> nested function
+    === cs.BM8563.get_year (<class 'function'>) ===
+    set_day        -> nested function
+    === cs.BM8563.set_day (<class 'function'>) ===
+    set_hours      -> nested function
+    === cs.BM8563.set_hours (<class 'function'>) ===
+    set_minutes    -> nested function
+    === cs.BM8563.set_minutes (<class 'function'>) ===
+    set_month      -> nested function
+    === cs.BM8563.set_month (<class 'function'>) ===
+    set_seconds    -> nested function
+    === cs.BM8563.set_seconds (<class 'function'>) ===
+    set_time       -> nested function
+    === cs.BM8563.set_time (<class 'function'>) ===
+    set_year       -> nested function
+    === cs.BM8563.set_year (<class 'function'>) ===
+    time           -> nested Time
+    === cs.BM8563.time (<class 'Time'>) ===
+      day            = 0
+      hours          = 0
+      minutes        = 0
+      month          = 0
+      seconds        = 0
+      year           = 0
+  Buttons        -> nested type
+  === cs.Buttons (<class 'type'>) ===
+    Back           = 3
+    Down           = 1
+    Select         = 2
+    Up             = 0
+    get_pins_array -> nested function
+    === cs.Buttons.get_pins_array (<class 'function'>) ===
+  Display        -> nested type
+  === cs.Display (<class 'type'>) ===
+    Color          -> nested type
+    === cs.Display.Color (<class 'type'>) ===
+      Black          = 0
+      Blue           = 31
+      Cyan           = 2047
+      Forest         = 1040
+      Gray           = 33808
+      Green          = 2016
+      Maroon         = 32768
+      Navy           = 16
+      Purple         = 63519
+      Red            = 63488
+      White          = 65535
+      Yellow         = 65504
+    blit           -> nested function
+    === cs.Display.blit (<class 'function'>) ===
+    commit         -> nested function
+    === cs.Display.commit (<class 'function'>) ===
+    ellipse        -> nested function
+    === cs.Display.ellipse (<class 'function'>) ===
+    fill           -> nested function
+    === cs.Display.fill (<class 'function'>) ===
+    fill_rect      -> nested function
+    === cs.Display.fill_rect (<class 'function'>) ===
+    hline          -> nested function
+    === cs.Display.hline (<class 'function'>) ===
+    line           -> nested function
+    === cs.Display.line (<class 'function'>) ===
+    pixel          -> nested function
+    === cs.Display.pixel (<class 'function'>) ===
+    poly           -> nested function
+    === cs.Display.poly (<class 'function'>) ===
+    rect           -> nested function
+    === cs.Display.rect (<class 'function'>) ===
+    scroll         -> nested function
+    === cs.Display.scroll (<class 'function'>) ===
+    text           -> nested function
+    === cs.Display.text (<class 'function'>) ===
+    vline          -> nested function
+    === cs.Display.vline (<class 'function'>) ===
+  I2C            -> nested type
+  === cs.I2C (<class 'type'>) ===
+    init           -> nested function
+    === cs.I2C.init (<class 'function'>) ===
+    readfrom       -> nested function
+    === cs.I2C.readfrom (<class 'function'>) ===
+    readfrom_into  -> nested function
+    === cs.I2C.readfrom_into (<class 'function'>) ===
+    readfrom_mem   -> nested function
+    === cs.I2C.readfrom_mem (<class 'function'>) ===
+    readfrom_mem_into -> nested function
+    === cs.I2C.readfrom_mem_into (<class 'function'>) ===
+    readinto       -> nested function
+    === cs.I2C.readinto (<class 'function'>) ===
+    scan           -> nested function
+    === cs.I2C.scan (<class 'function'>) ===
+    start          -> nested function
+    === cs.I2C.start (<class 'function'>) ===
+    stop           -> nested function
+    === cs.I2C.stop (<class 'function'>) ===
+    write          -> nested function
+    === cs.I2C.write (<class 'function'>) ===
+    writeto        -> nested function
+    === cs.I2C.writeto (<class 'function'>) ===
+    writeto_mem    -> nested function
+    === cs.I2C.writeto_mem (<class 'function'>) ===
+    writevto       -> nested function
+    === cs.I2C.writevto (<class 'function'>) ===
+  InputGPIO      -> nested type
+  === cs.InputGPIO (<class 'type'>) ===
+    loop           -> nested generator
+    === cs.InputGPIO.loop (<class 'generator'>) ===
+    on_press       -> nested function
+    === cs.InputGPIO.on_press (<class 'function'>) ===
+    on_release     -> nested function
+    === cs.InputGPIO.on_release (<class 'function'>) ===
+    pressed        -> nested function
+    === cs.InputGPIO.pressed (<class 'function'>) ===
+    released       -> nested function
+    === cs.InputGPIO.released (<class 'function'>) ===
+    scan           -> nested function
+    === cs.InputGPIO.scan (<class 'function'>) ===
+    state          -> nested function
+    === cs.InputGPIO.state (<class 'function'>) ===
+  LSM6DS3TR      -> nested type
+  === cs.LSM6DS3TR (<class 'type'>) ===
+    LSM6DS3TR_C_ID = 106
+    REG_CTRL1_XL   = 16
+    REG_CTRL2_G    = 17
+    REG_OUT_X_L_GY = 34
+    REG_OUT_X_L_XL = 40
+    REG_OUT_Y_L_GY = 36
+    REG_OUT_Y_L_XL = 42
+    REG_OUT_Z_L_GY = 38
+    REG_OUT_Z_L_XL = 44
+    REG_WHO_AM_I   = 15
+    Sample         -> nested type
+    === cs.LSM6DS3TR.Sample (<class 'type'>) ===
+    begin          -> nested function
+    === cs.LSM6DS3TR.begin (<class 'function'>) ===
+    convert_accel  -> nested function
+    === cs.LSM6DS3TR.convert_accel (<class 'function'>) ===
+    convert_gyro   -> nested function
+    === cs.LSM6DS3TR.convert_gyro (<class 'function'>) ===
+    get2reg        -> nested function
+    === cs.LSM6DS3TR.get2reg (<class 'function'>) ===
+    get_accel      -> nested function
+    === cs.LSM6DS3TR.get_accel (<class 'function'>) ===
+    get_accel_x    -> nested function
+    === cs.LSM6DS3TR.get_accel_x (<class 'function'>) ===
+    get_accel_y    -> nested function
+    === cs.LSM6DS3TR.get_accel_y (<class 'function'>) ===
+    get_accel_z    -> nested function
+    === cs.LSM6DS3TR.get_accel_z (<class 'function'>) ===
+    get_gyro       -> nested function
+    === cs.LSM6DS3TR.get_gyro (<class 'function'>) ===
+    get_gyro_x     -> nested function
+    === cs.LSM6DS3TR.get_gyro_x (<class 'function'>) ===
+    get_gyro_y     -> nested function
+    === cs.LSM6DS3TR.get_gyro_y (<class 'function'>) ===
+    get_gyro_z     -> nested function
+    === cs.LSM6DS3TR.get_gyro_z (<class 'function'>) ===
+    get_sample     -> nested function
+    === cs.LSM6DS3TR.get_sample (<class 'function'>) ===
+    getreg         -> nested function
+    === cs.LSM6DS3TR.getreg (<class 'function'>) ===
+    int16          -> nested function
+    === cs.LSM6DS3TR.int16 (<class 'function'>) ===
+    setreg         -> nested function
+    === cs.LSM6DS3TR.setreg (<class 'function'>) ===
+  PanelST7735_128x128 -> nested type
+  === cs.PanelST7735_128x128 (<class 'type'>) ===
+    height         -> nested function
+    === cs.PanelST7735_128x128.height (<class 'function'>) ===
+    init           -> nested function
+    === cs.PanelST7735_128x128.init (<class 'function'>) ===
+    push           -> nested function
+    === cs.PanelST7735_128x128.push (<class 'function'>) ===
+    scale          -> nested function
+    === cs.PanelST7735_128x128.scale (<class 'function'>) ===
+    width          -> nested function
+    === cs.PanelST7735_128x128.width (<class 'function'>) ===
+  Piezo          -> nested type
+  === cs.Piezo (<class 'type'>) ===
+    tone           -> nested function
+    === cs.Piezo.tone (<class 'function'>) ===
+  Pin            -> nested type
+  === cs.Pin (<class 'type'>) ===
+    DRIVE_0        = 0
+    DRIVE_1        = 1
+    DRIVE_2        = 2
+    DRIVE_3        = 3
+    IN             = 1
+    IRQ_FALLING    = 2
+    IRQ_RISING     = 1
+    OPEN_DRAIN     = 7
+    OUT            = 3
+    PULL_DOWN      = 1
+    PULL_UP        = 2
+    WAKE_HIGH      = 5
+    WAKE_LOW       = 4
+    board          -> nested type
+    === cs.Pin.board (<class 'type'>) ===
+    init           -> nested function
+    === cs.Pin.init (<class 'function'>) ===
+    irq            -> nested function
+    === cs.Pin.irq (<class 'function'>) ===
+    off            -> nested function
+    === cs.Pin.off (<class 'function'>) ===
+    on             -> nested function
+    === cs.Pin.on (<class 'function'>) ===
+    value          -> nested function
+    === cs.Pin.value (<class 'function'>) ===
+  Pins           -> nested type
+  === cs.Pins (<class 'type'>) ===
+    BATT           = 1
+    BL             = 0
+    BUZZ           = 12
+    BtnBack        = 16
+    BtnDown        = 14
+    BtnSelect      = 15
+    BtnUp          = 13
+    CHARGE         = 2
+    I2C_SCL        = 8
+    I2C_SDA        = 7
+    LED_B          = 11
+    LED_G          = 10
+    LED_R          = 9
+    Rev2Map        -> nested dict
+    === cs.Pins.Rev2Map (<class 'dict'>) ===
+      clear          -> nested bound_method
+      copy           -> nested bound_method
+      fromkeys       -> nested bound_method
+      get            -> nested bound_method
+      items          -> nested bound_method
+      keys           -> nested bound_method
+      pop            -> nested bound_method
+      popitem        -> nested bound_method
+      setdefault     -> nested bound_method
+      update         -> nested bound_method
+      values         -> nested bound_method
+    TFT_DC         = 5
+    TFT_MOSI       = 4
+    TFT_RST        = 6
+    TFT_SCK        = 3
+    get            -> nested function
+    === cs.Pins.get (<class 'function'>) ===
+  RGB_LED        -> nested type
+  === cs.RGB_LED (<class 'type'>) ===
+    get            -> nested function
+    === cs.RGB_LED.get (<class 'function'>) ===
+    get_b          -> nested function
+    === cs.RGB_LED.get_b (<class 'function'>) ===
+    get_g          -> nested function
+    === cs.RGB_LED.get_g (<class 'function'>) ===
+    get_r          -> nested function
+    === cs.RGB_LED.get_r (<class 'function'>) ===
+    set            -> nested function
+    === cs.RGB_LED.set (<class 'function'>) ===
+    set_b          -> nested function
+    === cs.RGB_LED.set_b (<class 'function'>) ===
+    set_g          -> nested function
+    === cs.RGB_LED.set_g (<class 'function'>) ===
+    set_r          -> nested function
+    === cs.RGB_LED.set_r (<class 'function'>) ===
+  SPI            -> nested type
+  === cs.SPI (<class 'type'>) ===
+    LSB            = 1
+    MSB            = 0
+    deinit         -> nested function
+    === cs.SPI.deinit (<class 'function'>) ===
+    init           -> nested function
+    === cs.SPI.init (<class 'function'>) ===
+    read           -> nested function
+    === cs.SPI.read (<class 'function'>) ===
+    readinto       -> nested function
+    === cs.SPI.readinto (<class 'function'>) ===
+    write          -> nested function
+    === cs.SPI.write (<class 'function'>) ===
+    write_readinto -> nested function
+    === cs.SPI.write_readinto (<class 'function'>) ===
+  Signal         -> nested type
+  === cs.Signal (<class 'type'>) ===
+    off            -> nested function
+    === cs.Signal.off (<class 'function'>) ===
+    on             -> nested function
+    === cs.Signal.on (<class 'function'>) ===
+    value          -> nested function
+    === cs.Signal.value (<class 'function'>) ===
+  TFT            -> nested type
+  === cs.TFT (<class 'type'>) ===
+    BLACK          = 0
+    BLUE           = 31
+    CASET          = 42
+    COLMOD         = 58
+    CYAN           = 2047
+    DISPOFF        = 40
+    DISPON         = 41
+    DISSET5        = 182
+    FOREST         = 1040
+    FRMCTR1        = 177
+    FRMCTR2        = 178
+    FRMCTR3        = 179
+    GMCTRN1        = 225
+    GMCTRP1        = 224
+    GRAY           = 33808
+    GREEN          = 2016
+    INVCTR         = 180
+    INVOFF         = 32
+    INVON          = 33
+    MADCTL         = 54
+    MAROON         = 32768
+    NAVY           = 16
+    NOP            = 0
+    NORON          = 19
+    PTLON          = 18
+    PURPLE         = 63519
+    PWCTR1         = 192
+    PWCTR2         = 193
+    PWCTR3         = 194
+    PWCTR4         = 195
+    PWCTR5         = 196
+    PWCTR6         = 252
+    RAMRD          = 46
+    RAMWR          = 44
+    RASET          = 43
+    RDDID          = 4
+    RDDST          = 9
+    RDID1          = 218
+    RDID2          = 219
+    RDID3          = 220
+    RDID4          = 221
+    RED            = 63488
+    SLPIN          = 16
+    SLPOUT         = 17
+    SWRESET        = 1
+    VMCTR1         = 197
+    VSCRDEF        = 51
+    VSCSAD         = 55
+    WHITE          = 65535
+    YELLOW         = 65504
+    char           -> nested function
+    === cs.TFT.char (<class 'function'>) ===
+    circle         -> nested function
+    === cs.TFT.circle (<class 'function'>) ===
+    color          -> nested function
+    === cs.TFT.color (<class 'function'>) ===
+    fill           -> nested function
+    === cs.TFT.fill (<class 'function'>) ===
+    fillcircle     -> nested function
+    === cs.TFT.fillcircle (<class 'function'>) ===
+    fillrect       -> nested function
+    === cs.TFT.fillrect (<class 'function'>) ===
+    hline          -> nested function
+    === cs.TFT.hline (<class 'function'>) ===
+    image          -> nested function
+    === cs.TFT.image (<class 'function'>) ===
+    initb          -> nested function
+    === cs.TFT.initb (<class 'function'>) ===
+    initb2         -> nested function
+    === cs.TFT.initb2 (<class 'function'>) ===
+    initg          -> nested function
+    === cs.TFT.initg (<class 'function'>) ===
+    initr          -> nested function
+    === cs.TFT.initr (<class 'function'>) ===
+    invertcolor    -> nested function
+    === cs.TFT.invertcolor (<class 'function'>) ===
+    line           -> nested function
+    === cs.TFT.line (<class 'function'>) ===
+    on             -> nested function
+    === cs.TFT.on (<class 'function'>) ===
+    pixel          -> nested function
+    === cs.TFT.pixel (<class 'function'>) ===
+    rect           -> nested function
+    === cs.TFT.rect (<class 'function'>) ===
+    rgb            -> nested function
+    === cs.TFT.rgb (<class 'function'>) ===
+    rotation       -> nested function
+    === cs.TFT.rotation (<class 'function'>) ===
+    setvscroll     -> nested function
+    === cs.TFT.setvscroll (<class 'function'>) ===
+    size           -> nested function
+    === cs.TFT.size (<class 'function'>) ===
+    text           -> nested function
+    === cs.TFT.text (<class 'function'>) ===
+    vline          -> nested function
+    === cs.TFT.vline (<class 'function'>) ===
+    vscroll        -> nested function
+    === cs.TFT.vscroll (<class 'function'>) ===
+  backlight      -> nested Signal
+  === cs.backlight (<class 'Signal'>) ===
+    off            -> nested bound_method
+    === cs.backlight.off (<class 'bound_method'>) ===
+    on             -> nested bound_method
+    === cs.backlight.on (<class 'bound_method'>) ===
+    value          -> nested bound_method
+    === cs.backlight.value (<class 'bound_method'>) ===
+  begin          -> nested function
+  === cs.begin (<class 'function'>) ===
+  btn_pins       -> nested Buttons
+  === cs.btn_pins (<class 'Buttons'>) ===
+    Back           = 3
+    Down           = 1
+    Pins           -> nested list
+    === cs.btn_pins.Pins (<class 'list'>) ===
+      append         -> nested bound_method
+      clear          -> nested bound_method
+      copy           -> nested bound_method
+      count          -> nested bound_method
+      extend         -> nested bound_method
+      index          -> nested bound_method
+      insert         -> nested bound_method
+      pop            -> nested bound_method
+      remove         -> nested bound_method
+      reverse        -> nested bound_method
+      sort           -> nested bound_method
+    Select         = 2
+    Up             = 0
+    get_pins_array -> nested bound_method
+    === cs.btn_pins.get_pins_array (<class 'bound_method'>) ===
+  buttons        -> nested InputGPIO
+  === cs.buttons (<class 'InputGPIO'>) ===
+    loop           -> nested bound_method
+    === cs.buttons.loop (<class 'bound_method'>) ===
+    numButtons     = 4
+    on_press       -> nested bound_method
+    === cs.buttons.on_press (<class 'bound_method'>) ===
+    on_release     -> nested bound_method
+    === cs.buttons.on_release (<class 'bound_method'>) ===
+    pins           -> nested list
+    === cs.buttons.pins (<class 'list'>) ===
+      append         -> nested bound_method
+      clear          -> nested bound_method
+      copy           -> nested bound_method
+      count          -> nested bound_method
+      extend         -> nested bound_method
+      index          -> nested bound_method
+      insert         -> nested bound_method
+      pop            -> nested bound_method
+      remove         -> nested bound_method
+      reverse        -> nested bound_method
+      sort           -> nested bound_method
+    pressed        -> nested bound_method
+    === cs.buttons.pressed (<class 'bound_method'>) ===
+    released       -> nested bound_method
+    === cs.buttons.released (<class 'bound_method'>) ===
+    scan           -> nested bound_method
+    === cs.buttons.scan (<class 'bound_method'>) ===
+    signals        -> nested list
+    === cs.buttons.signals (<class 'list'>) ===
+      append         -> nested bound_method
+      clear          -> nested bound_method
+      copy           -> nested bound_method
+      count          -> nested bound_method
+      extend         -> nested bound_method
+      index          -> nested bound_method
+      insert         -> nested bound_method
+      pop            -> nested bound_method
+      remove         -> nested bound_method
+      reverse        -> nested bound_method
+      sort           -> nested bound_method
+    state          -> nested bound_method
+    === cs.buttons.state (<class 'bound_method'>) ===
+  const          -> nested function
+  === cs.const (<class 'function'>) ===
+  display        -> nested Display
+  === cs.display (<class 'Display'>) ===
+    Color          -> nested type
+    blit           -> nested bound_method
+    === cs.display.blit (<class 'bound_method'>) ===
+    buffer         -> nested bytearray
+    === cs.display.buffer (<class 'bytearray'>) ===
+      append         -> nested bound_method
+      center         -> nested bound_method
+      count          -> nested bound_method
+      decode         -> nested bound_method
+      endswith       -> nested bound_method
+      extend         -> nested bound_method
+      find           -> nested bound_method
+      format         -> nested bound_method
+      fromhex        -> nested bound_method
+      hex            -> nested bound_method
+      index          -> nested bound_method
+      isalpha        -> nested bound_method
+      isdigit        -> nested bound_method
+      islower        -> nested bound_method
+      isspace        -> nested bound_method
+      isupper        -> nested bound_method
+      join           -> nested bound_method
+      lower          -> nested bound_method
+      lstrip         -> nested bound_method
+      partition      -> nested bound_method
+      replace        -> nested bound_method
+      rfind          -> nested bound_method
+      rindex         -> nested bound_method
+      rpartition     -> nested bound_method
+      rsplit         -> nested bound_method
+      rstrip         -> nested bound_method
+      split          -> nested bound_method
+      splitlines     -> nested bound_method
+      startswith     -> nested bound_method
+      strip          -> nested bound_method
+      upper          -> nested bound_method
+    commit         -> nested bound_method
+    === cs.display.commit (<class 'bound_method'>) ===
+    ellipse        -> nested bound_method
+    === cs.display.ellipse (<class 'bound_method'>) ===
+    fill           -> nested bound_method
+    === cs.display.fill (<class 'bound_method'>) ===
+    fill_rect      -> nested bound_method
+    === cs.display.fill_rect (<class 'bound_method'>) ===
+    height         = 128
+    hline          -> nested bound_method
+    === cs.display.hline (<class 'bound_method'>) ===
+    line           -> nested bound_method
+    === cs.display.line (<class 'bound_method'>) ===
+    panel          -> nested PanelST7735_128x128
+    === cs.display.panel (<class 'PanelST7735_128x128'>) ===
+      height         -> nested bound_method
+      init           -> nested bound_method
+      push           -> nested bound_method
+      scale          -> nested bound_method
+      tft            -> nested ST7789
+      width          -> nested bound_method
+    pixel          -> nested bound_method
+    === cs.display.pixel (<class 'bound_method'>) ===
+    poly           -> nested bound_method
+    === cs.display.poly (<class 'bound_method'>) ===
+    rect           -> nested bound_method
+    === cs.display.rect (<class 'bound_method'>) ===
+    scroll         -> nested bound_method
+    === cs.display.scroll (<class 'bound_method'>) ===
+    text           -> nested bound_method
+    === cs.display.text (<class 'bound_method'>) ===
+    vline          -> nested bound_method
+    === cs.display.vline (<class 'bound_method'>) ===
+    width          = 128
+  efuse          -> nested module
+  === cs.efuse (<class 'module'>) ===
+    read_pid       -> nested function
+    === cs.efuse.read_pid (<class 'function'>) ===
+    read_reg       -> nested function
+    === cs.efuse.read_reg (<class 'function'>) ===
+    read_rev       -> nested function
+    === cs.efuse.read_rev (<class 'function'>) ===
+  i2c            -> nested I2C
+  === cs.i2c (<class 'I2C'>) ===
+    init           -> nested bound_method
+    === cs.i2c.init (<class 'bound_method'>) ===
+    readfrom       -> nested bound_method
+    === cs.i2c.readfrom (<class 'bound_method'>) ===
+    readfrom_into  -> nested bound_method
+    === cs.i2c.readfrom_into (<class 'bound_method'>) ===
+    readfrom_mem   -> nested bound_method
+    === cs.i2c.readfrom_mem (<class 'bound_method'>) ===
+    readfrom_mem_into -> nested bound_method
+    === cs.i2c.readfrom_mem_into (<class 'bound_method'>) ===
+    readinto       -> nested bound_method
+    === cs.i2c.readinto (<class 'bound_method'>) ===
+    scan           -> nested bound_method
+    === cs.i2c.scan (<class 'bound_method'>) ===
+    start          -> nested bound_method
+    === cs.i2c.start (<class 'bound_method'>) ===
+    stop           -> nested bound_method
+    === cs.i2c.stop (<class 'bound_method'>) ===
+    write          -> nested bound_method
+    === cs.i2c.write (<class 'bound_method'>) ===
+    writeto        -> nested bound_method
+    === cs.i2c.writeto (<class 'bound_method'>) ===
+    writeto_mem    -> nested bound_method
+    === cs.i2c.writeto_mem (<class 'bound_method'>) ===
+    writevto       -> nested bound_method
+    === cs.i2c.writevto (<class 'bound_method'>) ===
+  imu            -> nested LSM6DS3TR
+  === cs.imu (<class 'LSM6DS3TR'>) ===
+    LSM6DS3TR_C_ID = 106
+    REG_CTRL1_XL   = 16
+    REG_CTRL2_G    = 17
+    REG_OUT_X_L_GY = 34
+    REG_OUT_X_L_XL = 40
+    REG_OUT_Y_L_GY = 36
+    REG_OUT_Y_L_XL = 42
+    REG_OUT_Z_L_GY = 38
+    REG_OUT_Z_L_XL = 44
+    REG_WHO_AM_I   = 15
+    Sample         -> nested type
+    addr           = 106
+    begin          -> nested bound_method
+    === cs.imu.begin (<class 'bound_method'>) ===
+    convert_accel  -> nested bound_method
+    convert_gyro   -> nested bound_method
+    === cs.imu.convert_gyro (<class 'bound_method'>) ===
+    get2reg        -> nested bound_method
+    === cs.imu.get2reg (<class 'bound_method'>) ===
+    get_accel      -> nested bound_method
+    === cs.imu.get_accel (<class 'bound_method'>) ===
+    get_accel_x    -> nested bound_method
+    === cs.imu.get_accel_x (<class 'bound_method'>) ===
+    get_accel_y    -> nested bound_method
+    === cs.imu.get_accel_y (<class 'bound_method'>) ===
+    get_accel_z    -> nested bound_method
+    === cs.imu.get_accel_z (<class 'bound_method'>) ===
+    get_gyro       -> nested bound_method
+    === cs.imu.get_gyro (<class 'bound_method'>) ===
+    get_gyro_x     -> nested bound_method
+    === cs.imu.get_gyro_x (<class 'bound_method'>) ===
+    get_gyro_y     -> nested bound_method
+    === cs.imu.get_gyro_y (<class 'bound_method'>) ===
+    get_gyro_z     -> nested bound_method
+    === cs.imu.get_gyro_z (<class 'bound_method'>) ===
+    get_sample     -> nested bound_method
+    === cs.imu.get_sample (<class 'bound_method'>) ===
+    getreg         -> nested bound_method
+    === cs.imu.getreg (<class 'bound_method'>) ===
+    i2c            -> nested I2C
+    int16          -> nested bound_method
+    === cs.imu.int16 (<class 'bound_method'>) ===
+    setreg         -> nested bound_method
+    === cs.imu.setreg (<class 'bound_method'>) ===
+  panel          -> nested PanelST7735_128x128
+  piezo          -> nested Piezo
+  === cs.piezo (<class 'Piezo'>) ===
+    tone           -> nested bound_method
+    === cs.piezo.tone (<class 'bound_method'>) ===
+  pins           -> nested Pins
+  === cs.pins (<class 'Pins'>) ===
+    BATT           = 1
+    BL             = 0
+    BUZZ           = 12
+    BtnBack        = 16
+    BtnDown        = 14
+    BtnSelect      = 15
+    BtnUp          = 13
+    CHARGE         = 2
+    I2C_SCL        = 8
+    I2C_SDA        = 7
+    LED_B          = 11
+    LED_G          = 10
+    LED_R          = 9
+    Rev2Map        -> nested dict
+    TFT_DC         = 5
+    TFT_MOSI       = 4
+    TFT_RST        = 6
+    TFT_SCK        = 3
+    currentMap     -> nested dict
+    get            -> nested bound_method
+    === cs.pins.get (<class 'bound_method'>) ===
+  revision       = 2
+  rgb            -> nested RGB_LED
+  === cs.rgb (<class 'RGB_LED'>) ===
+    get            -> nested bound_method
+    === cs.rgb.get (<class 'bound_method'>) ===
+    get_b          -> nested bound_method
+    === cs.rgb.get_b (<class 'bound_method'>) ===
+    get_g          -> nested bound_method
+    === cs.rgb.get_g (<class 'bound_method'>) ===
+    get_r          -> nested bound_method
+    === cs.rgb.get_r (<class 'bound_method'>) ===
+    set            -> nested bound_method
+    === cs.rgb.set (<class 'bound_method'>) ===
+    set_b          -> nested bound_method
+    === cs.rgb.set_b (<class 'bound_method'>) ===
+    set_g          -> nested bound_method
+    === cs.rgb.set_g (<class 'bound_method'>) ===
+    set_r          -> nested bound_method
+    === cs.rgb.set_r (<class 'bound_method'>) ===
+  rtc            -> nested BM8563
+  === cs.rtc (<class 'BM8563'>) ===
+    ADDR           = 81
+    begin          -> nested bound_method
+    === cs.rtc.begin (<class 'bound_method'>) ===
+    get_day        -> nested bound_method
+    === cs.rtc.get_day (<class 'bound_method'>) ===
+    get_hours      -> nested bound_method
+    === cs.rtc.get_hours (<class 'bound_method'>) ===
+    get_minutes    -> nested bound_method
+    === cs.rtc.get_minutes (<class 'bound_method'>) ===
+    get_month      -> nested bound_method
+    === cs.rtc.get_month (<class 'bound_method'>) ===
+    get_seconds    -> nested bound_method
+    === cs.rtc.get_seconds (<class 'bound_method'>) ===
+    get_time       -> nested bound_method
+    === cs.rtc.get_time (<class 'bound_method'>) ===
+    get_year       -> nested bound_method
+    === cs.rtc.get_year (<class 'bound_method'>) ===
+    set_day        -> nested bound_method
+    === cs.rtc.set_day (<class 'bound_method'>) ===
+    set_hours      -> nested bound_method
+    === cs.rtc.set_hours (<class 'bound_method'>) ===
+    set_minutes    -> nested bound_method
+    === cs.rtc.set_minutes (<class 'bound_method'>) ===
+    set_month      -> nested bound_method
+    === cs.rtc.set_month (<class 'bound_method'>) ===
+    set_seconds    -> nested bound_method
+    === cs.rtc.set_seconds (<class 'bound_method'>) ===
+    set_time       -> nested bound_method
+    === cs.rtc.set_time (<class 'bound_method'>) ===
+    set_year       -> nested bound_method
+    === cs.rtc.set_year (<class 'bound_method'>) ===
+    time           -> nested Time
+  spiTFT         -> nested SPI
+  === cs.spiTFT (<class 'SPI'>) ===
+    LSB            = 1
+    MSB            = 0
+    deinit         -> nested bound_method
+    === cs.spiTFT.deinit (<class 'bound_method'>) ===
+    init           -> nested bound_method
+    === cs.spiTFT.init (<class 'bound_method'>) ===
+    read           -> nested bound_method
+    === cs.spiTFT.read (<class 'bound_method'>) ===
+    readinto       -> nested bound_method
+    === cs.spiTFT.readinto (<class 'bound_method'>) ===
+    write          -> nested bound_method
+    === cs.spiTFT.write (<class 'bound_method'>) ===
+    write_readinto -> nested bound_method
+    === cs.spiTFT.write_readinto (<class 'bound_method'>) ===
