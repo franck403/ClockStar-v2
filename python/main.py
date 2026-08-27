@@ -252,7 +252,7 @@ def on_media_info(info):
     _media_title = info.get("title", "")
     _media_artist = info.get("artist", "")
     _mark_dirty()
-    
+
 gc.collect()
 
 link = PhoneLink(
@@ -353,6 +353,13 @@ def _close_settings():
 _SYNC_DOT_FRAMES = ("", ".", "..", "...")
 _sync_anim_idx = 0
 _sync_screen_battery_drawn = False
+# NOTE: this MUST live at module scope, not inside main_loop(). It's read
+# from _update_active_ui(), a separate module-level function that has no
+# visibility into main_loop()'s locals -- a local copy of the same name
+# inside main_loop() shadowed this value there but left every other
+# reader seeing an undefined name, which is what caused the
+# "NameError: name 'SYNC_ANIM_INTERVAL_MS' isn't defined" crash.
+SYNC_ANIM_INTERVAL_MS = 500
 
 
 def draw_sync_lock_screen(full_redraw=True):
@@ -1239,7 +1246,12 @@ def main_loop():
     GYRO_POLL_OFF_MS = 1000
     BLE_POLL_ON_MS = 150
     BLE_POLL_OFF_MS = 2000
-    SYNC_ANIM_INTERVAL_MS = 500
+    # NOTE: SYNC_ANIM_INTERVAL_MS is NOT defined here anymore. It used to be
+    # a local right here, which shadowed the module-level constant only
+    # inside this function -- every other function reading it (like
+    # _update_active_ui) saw an undefined name and crashed with
+    # NameError: name 'SYNC_ANIM_INTERVAL_MS' isn't defined. It now lives
+    # at module scope next to the other sync-lock screen state, above.
 
     while True:
         pedometer.poll()
