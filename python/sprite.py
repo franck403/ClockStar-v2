@@ -1,5 +1,5 @@
-import gc
 import framebuf
+import gc
 
 HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
@@ -64,36 +64,35 @@ def blit_file(
 
         row_bytes = width * BYTES_PER_PIXEL
         chunk_rows = max(1, min(MAX_CHUNK_ROWS, height))
+
         chunk_buf = bytearray(row_bytes * chunk_rows)
+        chunk_bytes = bytearray(row_bytes * chunk_rows)
 
         rows_done = 0
         while rows_done < height:
             rows_this_chunk = min(chunk_rows, height - rows_done)
             nbytes = row_bytes * rows_this_chunk
 
-            if rows_this_chunk == chunk_rows:
-                mv = memoryview(chunk_buf)
-            else:
-                mv = memoryview(chunk_buf)[:nbytes]
+            mv = memoryview(chunk_buf)[:nbytes]
 
             got = f.readinto(mv)
             if got != nbytes:
-                del mv
-                del chunk_buf
+                del mv, chunk_buf, chunk_bytes
                 gc.collect()
                 raise ValueError(
                     "sprite file truncated: %s (wanted %d bytes, got %d)"
                     % (path, nbytes, got)
                 )
 
-            chunk_bytes = bytearray(mv)
+            work_mv = memoryview(chunk_bytes)[:nbytes]
+            work_mv[:] = mv
             del mv
 
             if darken is not None:
-                _darken_chunk(chunk_bytes, nbytes, darken)
+                _darken_chunk(work_mv, nbytes, darken)
 
             chunk_fb = framebuf.FrameBuffer(
-                chunk_bytes, width, rows_this_chunk, framebuf.RGB565
+                work_mv, width, rows_this_chunk, framebuf.RGB565
             )
 
             if key is not None and palette is not None:
@@ -106,10 +105,9 @@ def blit_file(
             rows_done += rows_this_chunk
 
             del chunk_fb
-            del chunk_bytes
-            gc.collect()
+            del work_mv
 
-        del chunk_buf
+        del chunk_buf, chunk_bytes
 
     gc.collect()
 
