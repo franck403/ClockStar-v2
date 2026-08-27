@@ -8,7 +8,7 @@ Runs on the ClockStar v2's ESP32-S3, 128x128 display.
 
 - **Clock, media, pedometer, notifications, and settings screens**, cycled with Up/Down
 - **BLE integration with the stock CircuitMess app** via a from-scratch Nordic UART Service (NUS) implementation — time sync, notifications, call alerts, media control/state, and phone-find, all speaking the same protocol as the original firmware
-- **Battery gauge** using a piecewise LiPo discharge curve (not a naive linear map), with charge detection and a low-battery BLE auto-disconnect
+- **Battery gauge** using a piecewise LiPo discharge curve (not a naive linear map), with charge detection and a low-battery BLE auto-disconnect (IS STILL HAVING ISSUES WITH IT SORRY)
 - **Settings screen** (hold Back ~1.4s): idle/backlight timeout, tilt-to-wake toggle, live gyro debug readout, detailed battery info — all persisted to `settings.json`
 - **RTC sync lock screen**: blocks the UI with a "SYNC NEEDED" prompt until the phone app provides a real time over BLE, so the watch never silently runs on a bogus 1900 date
 - **Power management**: dynamic CPU frequency scaling (240MHz active / 60-80MHz idle depending on BLE state), throttled gyro/BLE/input polling while the screen is off
@@ -34,8 +34,6 @@ clock_bg.spr        Clock face background sprite
 A browser-based installer (Web Serial API) is available for flashing this firmware without any local tooling — just Chrome/Edge, a USB-C cable, and the watch. It fetches every file from this repo, opens a MicroPython Raw REPL session over serial, and writes each file to the device.
 
 **Requirements:** Chrome or Edge (Web Serial API support). Firefox/Safari are not supported.
-
-All files are flashed as plain `.py` source — no bytecode compilation — so on-device tracebacks show real line numbers, which matters a lot given the firmware is still under active debugging.
 
 ## Known Issues
 
