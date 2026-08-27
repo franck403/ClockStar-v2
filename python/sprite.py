@@ -66,7 +66,6 @@ def blit_file(
         chunk_rows = max(1, min(MAX_CHUNK_ROWS, height))
 
         chunk_buf = bytearray(row_bytes * chunk_rows)
-        chunk_bytes = bytearray(row_bytes * chunk_rows)
 
         rows_done = 0
         while rows_done < height:
@@ -74,25 +73,27 @@ def blit_file(
             nbytes = row_bytes * rows_this_chunk
 
             mv = memoryview(chunk_buf)[:nbytes]
-
             got = f.readinto(mv)
+            del mv
+
             if got != nbytes:
-                del mv, chunk_buf, chunk_bytes
+                del chunk_buf
                 gc.collect()
                 raise ValueError(
                     "sprite file truncated: %s (wanted %d bytes, got %d)"
                     % (path, nbytes, got)
                 )
 
-            work_mv = memoryview(chunk_bytes)[:nbytes]
-            work_mv[:] = mv
-            del mv
+            if nbytes == len(chunk_buf):
+                raw_bytes = chunk_buf
+            else:
+                raw_bytes = chunk_buf[:nbytes]
 
             if darken is not None:
-                _darken_chunk(work_mv, nbytes, darken)
+                _darken_chunk(raw_bytes, nbytes, darken)
 
             chunk_fb = framebuf.FrameBuffer(
-                work_mv, width, rows_this_chunk, framebuf.RGB565
+                raw_bytes, width, rows_this_chunk, framebuf.RGB565
             )
 
             if key is not None and palette is not None:
@@ -105,9 +106,10 @@ def blit_file(
             rows_done += rows_this_chunk
 
             del chunk_fb
-            del work_mv
+            if raw_bytes is not chunk_buf:
+                del raw_bytes
 
-        del chunk_buf, chunk_bytes
+        del chunk_buf
 
     gc.collect()
 
