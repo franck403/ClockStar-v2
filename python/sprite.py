@@ -1,3 +1,6 @@
+import gc
+import framebuf
+
 HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
 MAX_CHUNK_ROWS = 8
@@ -7,9 +10,13 @@ def peek_size(path):
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
     if len(header) < HEADER_SIZE:
+        del header
+        gc.collect()
         raise ValueError("sprite file too short for header: %s" % path)
     width = header[0] | (header[1] << 8)
     height = header[2] | (header[3] << 8)
+    del header
+    gc.collect()
     return width, height
 
 
@@ -42,17 +49,18 @@ def blit_file(
     transparent=False,
     palette=None,
 ):
-    import framebuf
-
     if transparent and key is None:
         key = 0
 
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
         if len(header) < HEADER_SIZE:
+            del header
+            gc.collect()
             raise ValueError("sprite file too short for header: %s" % path)
         width = header[0] | (header[1] << 8)
         height = header[2] | (header[3] << 8)
+        del header
 
         row_bytes = width * BYTES_PER_PIXEL
         chunk_rows = max(1, min(MAX_CHUNK_ROWS, height))
@@ -70,12 +78,17 @@ def blit_file(
 
             got = f.readinto(mv)
             if got != nbytes:
+                del mv
+                del chunk_buf
+                gc.collect()
                 raise ValueError(
                     "sprite file truncated: %s (wanted %d bytes, got %d)"
                     % (path, nbytes, got)
                 )
 
             chunk_bytes = bytearray(mv)
+            del mv
+
             if darken is not None:
                 _darken_chunk(chunk_bytes, nbytes, darken)
 
@@ -91,6 +104,14 @@ def blit_file(
                 display.blit(chunk_fb, dst_x, dst_y + rows_done)
 
             rows_done += rows_this_chunk
+
+            del chunk_fb
+            del chunk_bytes
+            gc.collect()
+
+        del chunk_buf
+
+    gc.collect()
 
 
 def write_file(path, width, height, rgb565_bytes):
@@ -118,6 +139,9 @@ def write_file(path, width, height, rgb565_bytes):
         f.write(header)
         f.write(rgb565_bytes)
 
+    del header
+    gc.collect()
+
 
 class IconSet:
 
@@ -136,15 +160,15 @@ class IconSet:
         transparent=False,
         black_overlay=False,
     ):
-        import framebuf
-
         path = self.frames.get(state)
         if path is None:
             return
         key = 0 if transparent else self.key
         blit_file(display, path, x, y, key=key)
+
         if charging and self.overlay:
             palette = None
+            pal_buf = None
             if black_overlay:
                 pal_buf = bytearray(4)
                 pal_buf[0] = 0x00
@@ -152,4 +176,12 @@ class IconSet:
                 pal_buf[2] = 0x00
                 pal_buf[3] = 0x00
                 palette = framebuf.FrameBuffer(pal_buf, 2, 1, framebuf.RGB565)
+
             blit_file(display, self.overlay, x, y, key=key, palette=palette)
+
+            if palette is not None:
+                del palette
+            if pal_buf is not None:
+                del pal_buf
+
+        gc.collect()

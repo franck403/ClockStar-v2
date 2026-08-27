@@ -56,12 +56,7 @@ class BLEUart:
         self._ble.irq(self._irq)
 
         time.sleep_ms(100)
-
-        try:
-            self._ble.config(mtu=50)
-        except Exception:
-            pass
-
+        
         try:
             self._ble.config(bond=True, mitm=False, io=_IO_CAPABILITY_NO_INPUT_OUTPUT, le_secure=True)
         except (ValueError, OSError):

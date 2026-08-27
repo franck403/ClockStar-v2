@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClockStar v2 Web Installer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#f0f9ff',
+                500: '#06b6d4',
+                600: '#0284c7',
+                700: '#0369a1',
+                900: '#0c4a6e',
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      .font-mono {
+        font-family: 'Fira Code', monospace;
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #1e293b;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #475569;
+        border-radius: 3px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+      }
+    </style>
+  </head>
+  <body
+    class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between"
+  >
+    <!-- Header -->
+    <header
+      class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50"
+    >
+      <div
+        class="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between"
+      >
+        <div class="flex items-center space-x-3">
+          <div
+            class="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400"
+          >
+            <i data-lucide="watch" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h1 class="font-bold text-lg leading-none text-white tracking-wide">
+              ClockStar v2
+            </h1>
+            <span class="text-xs text-slate-400 font-medium"
+              >Browser-based firmware installer</span
+            >
+          </div>
+        </div>
+
+        <!-- Status Indicators -->
+        <div class="flex items-center space-x-3">
+          <div
+            id="connectionBadge"
+            class="flex items-center space-x-2 px-3.5 py-1.5 bg-rose-500/10 border border-rose-500/20 rounded-full text-xs font-medium text-rose-400"
+          >
+            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+            <span id="connectionStateText">Disconnected</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main
+      class="max-w-6xl mx-auto px-4 py-6 w-full flex-1 flex flex-col space-y-6"
+    >
+      <!-- Warning / Notice Banner -->
+      <div
+        class="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start space-x-3 text-amber-200"
+      >
+        <i
+          data-lucide="alert-triangle"
+          class="w-5 h-5 text-amber-400 shrink-0 mt-0.5"
+        ></i>
+        <div class="text-sm leading-relaxed">
+          <strong class="font-semibold text-amber-300"
+            >Before you start:</strong
+          >
+          This will overwrite the firmware and asset files currently on your
+          watch. Your saved settings (<code
+            class="bg-amber-950/60 text-amber-300 px-1.5 py-0.5 rounded border border-amber-800/40 text-xs font-mono"
+            >settings.json</code
+          >) will be replaced, so idle timeout and tilt-to-wake preferences
+          reset to defaults after flashing.
+        </div>
+      </div>
+
+      <!-- Notification Box (Replaces alerts) -->
+      <div
+        id="notificationBanner"
+        class="hidden rounded-2xl p-4 border flex items-center justify-between text-sm transition-all duration-300"
+      >
+        <div class="flex items-center space-x-3">
+          <i
+            id="notificationIcon"
+            data-lucide="info"
+            class="w-5 h-5 shrink-0"
+          ></i>
+          <span id="notificationMessage" class="font-medium"></span>
+        </div>
+        <button
+          onclick="hideNotification()"
+          class="p-1 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white"
+        >
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Action Panel: single unified button -->
+      <div
+        class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-lg hover:border-slate-700 transition-all"
+      >
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span
+              id="mainCardStep"
+              class="text-xs font-bold tracking-wider text-cyan-400 uppercase"
+              >Step 1 of 2</span
+            >
+            <i
+              id="mainCardIcon"
+              data-lucide="usb"
+              class="w-5 h-5 text-slate-500"
+            ></i>
+          </div>
+          <h2 id="mainCardTitle" class="text-lg font-semibold text-white">
+            Connect Your Watch
+          </h2>
+          <p id="mainCardDesc" class="text-xs text-slate-400 leading-relaxed">
+            Plug your ClockStar v2 into this computer with a USB-C cable, then
+            click Connect and pick its serial port when your browser asks.
+          </p>
+        </div>
+        <div class="mt-5 flex items-center space-x-2">
+          <button
+            id="mainActionBtn"
+            onclick="handleMainAction()"
+            class="flex-1 py-3 px-4 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-medium rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-cyan-950/50 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
+          >
+            <i id="mainActionBtnIcon" data-lucide="plug" class="w-4 h-4"></i>
+            <span id="mainActionBtnText">Connect Watch</span>
+          </button>
+          <button
+            id="toggleConsoleBtn"
+            onclick="toggleConsole()"
+            title="Show detailed connection/transfer logs"
+            class="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all flex items-center justify-center space-x-2 text-sm"
+          >
+            <i data-lucide="terminal" class="w-4 h-4"></i>
+            <span id="toggleConsoleBtnText">Show Logs</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Installation Progress Bar (Hidden by default) -->
+      <div
+        id="progressContainer"
+        class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3"
+      >
+        <div class="flex justify-between items-center text-sm">
+          <span id="progressStatusText" class="font-medium text-slate-200"
+            >Preparing installation...</span
+          >
+          <span
+            id="progressPercentText"
+            class="font-mono text-cyan-400 font-bold"
+            >0%</span
+          >
+        </div>
+        <div
+          class="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800 p-0.5"
+        >
+          <div
+            id="progressBarInner"
+            class="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full rounded-full transition-all duration-300 w-0"
+          ></div>
+        </div>
+        <div
+          class="flex justify-between items-center text-xs text-slate-400 font-mono"
+        >
+          <span id="currentFileText">Waiting to start...</span>
+          <span id="transferRateText"></span>
+        </div>
+      </div>
+
+      <!-- Serial Terminal Log Window (hidden by default) -->
+      <div
+        id="terminalPanel"
+        class="hidden bg-slate-900 border border-slate-800 rounded-2xl flex flex-col flex-1 min-h-[320px] overflow-hidden shadow-2xl"
+      >
+        <!-- Terminal Control Header -->
+        <div
+          class="bg-slate-950 px-4 py-2.5 border-b border-slate-800 flex items-center justify-between"
+        >
+          <div class="flex items-center space-x-2">
+            <div class="w-3 h-3 rounded-full bg-slate-700"></div>
+            <div class="w-3 h-3 rounded-full bg-slate-700"></div>
+            <div class="w-3 h-3 rounded-full bg-slate-700"></div>
+            <span class="text-xs font-mono text-slate-400 ml-2"
+              >Console & Output Stream</span
+            >
+          </div>
+          <div class="flex items-center space-x-2">
+            <button
+              onclick="sendCtrlC()"
+              title="Send Ctrl+C Interrupt"
+              class="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition-all flex items-center space-x-1"
+            >
+              <i data-lucide="slash" class="w-3 h-3"></i>
+              <span>Interrupt (Ctrl+C)</span>
+            </button>
+            <button
+              onclick="rebootWatch()"
+              title="Reboot Watch (Ctrl+D)"
+              class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-medium transition-all flex items-center space-x-1"
+            >
+              <i data-lucide="rotate-cw" class="w-3 h-3"></i>
+              <span>Reboot Watch</span>
+            </button>
+            <button
+              onclick="clearLogs()"
+              title="Clear Logs"
+              class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-all"
+            >
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal Output Area -->
+        <div
+          id="terminalOutput"
+          class="flex-1 p-4 font-mono text-xs overflow-y-auto custom-scrollbar space-y-1 bg-slate-950/60"
+        >
+          <div class="text-slate-500">
+            [System] Web Installer initialized. Connect your ClockStar v2 watch
+            to begin.
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer
+      class="border-t border-slate-800 bg-slate-950 py-4 text-center text-xs text-slate-500"
+    >
+      ClockStar v2 Web Flasher &bull; GitHub Repo:
+      <a
+        href="https://github.com/franck403/ClockStar-v2"
+        target="_blank"
+        class="text-cyan-400 hover:underline"
+        >franck403/ClockStar-v2</a
+      >
+    </footer>
+
+    <script>
+      // ==========================================
+      // CONFIGURATION & FILE MANIFEST
+      // ==========================================
+      const REPO_BASE =
+        'https://cdn.jsdelivr.net/gh/franck403/ClockStar-v2/python/';
+
+      const INSTALL_FILES = [
+        // Core python modules
+        'battery.py',
+        'ble_nus.py',
+        'boot.py',
+        'clock_bg.spr',
+        'main.py',
+        'pedometer.py',
+        'phone_link.py',
+        'render.py',
+        'settings.json',
+        'sprite.py',
+
+        // Icon Sprites (direct copy to icons/)
+        'icons/batt_charging.spr',
+        'icons/batt_critical.spr',
+        'icons/batt_full.spr',
+        'icons/batt_half.spr',
+        'icons/batt_low.spr',
+        'icons/phone_connected.spr',
+        'icons/settings_slider.spr',
+        'icons/settings_slider_track.spr',
+      ];
+
+      // ==========================================
+      // GLOBAL SERIAL STATE & LOCKS
+      // ==========================================
+      let port = null;
+      let reader = null;
+      let persistentWriter = null; // held open for the whole session, like pyserial does
+      let readLoopActive = false;
+      let incomingBuffer = '';
+      let isFlashing = false;
+      let writeLock = Promise.resolve(); // Serial write mutex
+
+      // Initialize Lucide Icons
+      lucide.createIcons();
+
+      // Keyboard Shortcut: Ctrl+C or Cmd+C to interrupt watch
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+          const selection = window.getSelection().toString();
+          if (!selection && port) {
+            e.preventDefault();
+            sendCtrlC();
+          }
+        }
+      });
+
+      // ==========================================
+      // UI NOTIFICATION UTILITY
+      // ==========================================
+      function showNotification(msg, type = 'info') {
+        const banner = document.getElementById('notificationBanner');
+        const message = document.getElementById('notificationMessage');
+        const icon = document.getElementById('notificationIcon');
+
+        message.innerText = msg;
+        banner.classList.remove(
+          'hidden',
+          'bg-rose-500/10',
+          'border-rose-500/30',
+          'text-rose-200',
+          'bg-emerald-500/10',
+          'border-emerald-500/30',
+          'text-emerald-200',
+          'bg-cyan-500/10',
+          'border-cyan-500/30',
+          'text-cyan-200'
+        );
+
+        if (type === 'error') {
+          banner.classList.add(
+            'bg-rose-500/10',
+            'border-rose-500/30',
+            'text-rose-200'
+          );
+          icon.setAttribute('data-lucide', 'alert-circle');
+        } else if (type === 'success') {
+          banner.classList.add(
+            'bg-emerald-500/10',
+            'border-emerald-500/30',
+            'text-emerald-200'
+          );
+          icon.setAttribute('data-lucide', 'check-circle');
+        } else {
+          banner.classList.add(
+            'bg-cyan-500/10',
+            'border-cyan-500/30',
+            'text-cyan-200'
+          );
+          icon.setAttribute('data-lucide', 'info');
+        }
+        lucide.createIcons();
+      }
+
+      function hideNotification() {
+        document.getElementById('notificationBanner').classList.add('hidden');
+      }
+
+      // ==========================================
+      // LOGGING UTILITIES
+      // ==========================================
+      function logSerial(msg, type = 'info') {
+        const term = document.getElementById('terminalOutput');
+        const line = document.createElement('div');
+
+        const timestamp = new Date().toLocaleTimeString();
+        let colorClass = 'text-slate-300';
+        if (type === 'cmd') colorClass = 'text-cyan-400 font-semibold';
+        if (type === 'success') colorClass = 'text-emerald-400 font-semibold';
+        if (type === 'warn') colorClass = 'text-amber-400';
+        if (type === 'error') colorClass = 'text-rose-400 font-semibold';
+
+        line.className = colorClass;
+        line.innerHTML = `<span class="text-slate-600 select-none">[${timestamp}]</span> ${escapeHtml(
+          msg
+        )}`;
+        term.appendChild(line);
+        term.scrollTop = term.scrollHeight;
+      }
+
+      function clearLogs() {
+        document.getElementById('terminalOutput').innerHTML =
+          '<div class="text-slate-500">[System] Log cleared.</div>';
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      // ==========================================
+      // THREAD-SAFE SERIAL WRITER (persistent, like pyserial/Thonny)
+      // ==========================================
+      // Web Serial's getWriter()/releaseLock() is meant to be called once per
+      // session, not once per write. Repeatedly acquiring and releasing the
+      // writer lock in fast bursts (as the old code did on every single byte
+      // sent during interrupt sequences) appears to be what triggered the
+      // AbortError -- Thonny/pyserial never does this, it opens the stream
+      // once and writes to it directly for the whole session, which is why
+      // Thonny has no trouble interrupting the same device. This mirrors
+      // that: one writer, created on connect, reused for every write, only
+      // released on disconnect.
+      function _getPersistentWriter() {
+        if (!port || !port.writable)
+          throw new Error('Serial port is not connected or writable.');
+        if (!persistentWriter) {
+          persistentWriter = port.writable.getWriter();
+        }
+        return persistentWriter;
+      }
+
+      async function _releasePersistentWriter() {
+        if (persistentWriter) {
+          try {
+            persistentWriter.releaseLock();
+          } catch (e) {}
+          persistentWriter = null;
+        }
+      }
+
+      async function writeSerial(data, retriesLeft = 6) {
+        if (!port || !port.writable)
+          throw new Error('Serial port is not connected or writable.');
+
+        // Queue writes through writeLock mutex so concurrent callers don't
+        // race writes against the same underlying writer.
+        writeLock = writeLock.then(async () => {
+          const encoder = new TextEncoder();
+          const fullBytes = encoder.encode(data);
+
+          // Chunk large writes instead of handing the driver one big blob.
+          // Raw REPL commands (filename + ~340 chars of base64 per file
+          // chunk) sent back-to-back as single large write() calls were
+          // reliably AbortError-ing after 2-3 in a row -- consistent with
+          // overrunning this device's native USB-CDC TX buffer. Small
+          // writes with tiny pauses keep us well under whatever that limit
+          // is, regardless of what's actually causing it.
+          const WRITE_CHUNK_SIZE = 64;
+
+          try {
+            const writer = _getPersistentWriter();
+            if (fullBytes.length <= WRITE_CHUNK_SIZE) {
+              await writer.write(fullBytes);
+            } else {
+              for (let i = 0; i < fullBytes.length; i += WRITE_CHUNK_SIZE) {
+                const slice = fullBytes.slice(i, i + WRITE_CHUNK_SIZE);
+                await writer.write(slice);
+                if (i + WRITE_CHUNK_SIZE < fullBytes.length) {
+                  await new Promise((r) => setTimeout(r, 5));
+                }
+              }
+            }
+          } catch (err) {
+            const portState = port
+              ? `writable=${!!port.writable} readable=${!!port.readable}`
+              : 'port=null';
+
+            // A write failing while writable is still true means the device
+            // couldn't accept this particular write right now -- transient,
+            // not a real disconnect. Drop the (possibly now-broken) writer
+            // and reopen a fresh one before retrying.
+            const isTransient = port && port.writable;
+
+            if (isTransient && retriesLeft > 0) {
+              logSerial(
+                `writeSerial: ${
+                  err.name || 'Error'
+                } on write (device busy), reopening writer and retrying... (${retriesLeft} left)`,
+                'warn'
+              );
+              await _releasePersistentWriter();
+              await new Promise((r) => setTimeout(r, 250));
+              return writeSerial(data, retriesLeft - 1);
+            }
+
+            logSerial(
+              `writeSerial failed: ${err.name || 'Error'} - ${
+                err.message
+              } (${portState})`,
+              'error'
+            );
+            if (
+              err.name === 'NetworkError' ||
+              err.name === 'InvalidStateError' ||
+              (port && !port.writable)
+            ) {
+              logSerial(
+                'Serial device appears to have disconnected (USB-CDC drop or device reset). Forcing local disconnect state.',
+                'warn'
+              );
+              readLoopActive = false;
+              await _releasePersistentWriter();
+              port = null;
+              updateConnectionUI(false);
+            }
+            throw err;
+          }
+          // NOTE: no releaseLock() here on the success path -- the writer
+          // stays open for the next call, same as pyserial keeping the
+          // port open for the whole session.
+        });
+
+        return writeLock;
+      }
+
+      // ==========================================
+      // SERIAL READER LOOP
+      // ==========================================
+      async function startSerialReader() {
+        if (readLoopActive) return;
+        readLoopActive = true;
+
+        const decoder = new TextDecoder();
+        while (port && port.readable && readLoopActive) {
+          try {
+            reader = port.readable.getReader();
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) {
+                logSerial(
+                  'Serial reader: read() returned done=true (stream closed).',
+                  'warn'
+                );
+                break;
+              }
+              if (value) {
+                const chunk = decoder.decode(value);
+                logSerial(
+                  `RX chunk (${value.length}B): ${JSON.stringify(chunk)}`,
+                  'info'
+                );
+                incomingBuffer += chunk;
+
+                // Keep buffer lean
+                if (incomingBuffer.length > 16384) {
+                  incomingBuffer = incomingBuffer.substring(
+                    incomingBuffer.length - 8192
+                  );
+                }
+              }
+            }
+          } catch (err) {
+            if (readLoopActive) {
+              logSerial(
+                `Serial Read Exception: ${err.name || 'Error'} - ${
+                  err.message
+                }`,
+                'warn'
+              );
+            }
+          } finally {
+            if (reader) {
+              try {
+                reader.releaseLock();
+              } catch (e) {}
+            }
+          }
+        }
+        logSerial(
+          `Serial reader loop exited (port=${!!port}, readable=${!!(
+            port && port.readable
+          )}, readLoopActive=${readLoopActive}).`,
+          'warn'
+        );
+        readLoopActive = false;
+      }
+
+      // ==========================================
+      // UNIFIED MAIN ACTION BUTTON (Connect -> Install)
+      // ==========================================
+      let watchReady = false; // true once connected AND safeguard check passed
+
+      function _setMainButton(text, opts = {}) {
+        const btn = document.getElementById('mainActionBtn');
+        const btnText = document.getElementById('mainActionBtnText');
+        btnText.innerText = text;
+        if (opts.disabled !== undefined) btn.disabled = opts.disabled;
+        if (opts.icon) {
+          const iconEl = document.getElementById('mainActionBtnIcon');
+          iconEl.setAttribute('data-lucide', opts.icon);
+          iconEl.classList.toggle('animate-spin', opts.icon === 'loader-2');
+          lucide.createIcons();
+        }
+      }
+
+      function _setMainCard(step, title, desc, icon) {
+        document.getElementById('mainCardStep').innerText = step;
+        document.getElementById('mainCardTitle').innerText = title;
+        document.getElementById('mainCardDesc').innerText = desc;
+        document
+          .getElementById('mainCardIcon')
+          .setAttribute('data-lucide', icon);
+        lucide.createIcons();
+      }
+
+      async function handleMainAction() {
+        if (!port) {
+          await connectWatch();
+        } else if (watchReady && !isFlashing) {
+          await startInstallation();
+        }
+      }
+
+      function toggleConsole() {
+        const panel = document.getElementById('terminalPanel');
+        const label = document.getElementById('toggleConsoleBtnText');
+        panel.classList.toggle('hidden');
+        label.innerText = panel.classList.contains('hidden')
+          ? 'Show Logs'
+          : 'Hide Logs';
+      }
+
+      async function connectWatch() {
+        if (!('serial' in navigator)) {
+          logSerial(
+            'Error: Web Serial API is not supported in this browser. Please use Google Chrome, Edge, or Opera.',
+            'error'
+          );
+          showNotification(
+            "This browser can't talk to USB devices. Please switch to Chrome or Edge and try again.",
+            'error'
+          );
+          return;
+        }
+
+        try {
+          logSerial('Requesting USB Serial port...', 'cmd');
+          port = await navigator.serial.requestPort();
+          const BAUD_RATE = 57600;
+          await port.open({ baudRate: BAUD_RATE });
+
+          // NOTE: previously pulsed DTR/RTS here to try to force a hardware
+          // reset. Dropped: the boot log we saw once appears to have been
+          // caused by the port opening itself (rst reason was
+          // USB_UART_CHIP_RESET), not by the pulse -- no subsequent pulse
+          // ever produced a new boot log, and this device's native USB-CDC
+          // (ESP32-S3) doesn't have a real FTDI/CP2102-style auto-reset
+          // circuit wired to those signals. Thonny works reliably using pure
+          // software Ctrl+D/Ctrl+C, so we do the same here instead of
+          // touching signals that may be silently breaking the stream.
+
+          startSerialReader();
+
+          // Connected, but keep the button disabled/showing "Verifying"
+          // until the safeguard check below finishes -- it sends its own
+          // interrupt sequence on this same port, and letting the user
+          // click through mid-check causes two sequences to race on the
+          // same writeLock/incomingBuffer.
+          updateConnectionUI(true, { keepInstallDisabled: true });
+          _setMainButton('Verifying...', { disabled: true, icon: 'loader-2' });
+          _setMainCard(
+            'Step 1 of 2',
+            'Checking Your Watch',
+            "Connected — making sure it's running MicroPython before we touch anything.",
+            'search'
+          );
+          logSerial(
+            `Serial port opened successfully (${BAUD_RATE} baud).`,
+            'success'
+          );
+
+          // Perform safeguard check
+          await verifyMicroPythonInstalled();
+
+          // Safeguard done -- now safe to allow installation.
+          watchReady = true;
+          _setMainButton('Install to Watch', {
+            disabled: false,
+            icon: 'download-cloud',
+          });
+          _setMainCard(
+            'Step 2 of 2',
+            'Ready to Install',
+            'Your watch is connected and verified. Click below to flash the latest firmware and assets.',
+            'check-circle-2'
+          );
+        } catch (err) {
+          logSerial(
+            `Connection failed: ${err.name || 'Error'} - ${err.message}`,
+            'error'
+          );
+          if (err.name === 'NotFoundError') {
+            showNotification(
+              'No port selected — pick your watch from the list to connect.',
+              'error'
+            );
+          } else {
+            showNotification(`Couldn't connect: ${err.message}`, 'error');
+          }
+          await disconnectSerial();
+        }
+      }
+
+      async function hardResetPulse() {
+        if (!port) return false;
+        try {
+          await port.setSignals({
+            dataTerminalReady: false,
+            requestToSend: true,
+          });
+          await new Promise((r) => setTimeout(r, 100));
+          await port.setSignals({
+            dataTerminalReady: true,
+            requestToSend: false,
+          });
+          await new Promise((r) => setTimeout(r, 100));
+          await port.setSignals({
+            dataTerminalReady: false,
+            requestToSend: false,
+          });
+          return true;
+        } catch (sigErr) {
+          logSerial(`Hardware reset pulse failed: ${sigErr.message}`, 'warn');
+          return false;
+        }
+      }
+
+      async function disconnectSerial() {
+        readLoopActive = false;
+        await _releasePersistentWriter();
+        if (reader) {
+          try {
+            await reader.cancel();
+          } catch (e) {}
+        }
+        if (port) {
+          try {
+            await port.close();
+          } catch (e) {}
+        }
+        port = null;
+        updateConnectionUI(false);
+        logSerial('Serial connection closed.', 'info');
+      }
+
+      function updateConnectionUI(connected, opts = {}) {
+        const btn = document.getElementById('mainActionBtn');
+        const badge = document.getElementById('connectionBadge');
+
+        if (connected) {
+          btn.disabled = !!opts.keepInstallDisabled;
+
+          badge.className =
+            'flex items-center space-x-2 px-3.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs font-medium text-emerald-400';
+          badge.innerHTML =
+            '<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>Connected</span>';
+        } else {
+          watchReady = false;
+          btn.disabled = false;
+          _setMainButton('Connect Watch', { icon: 'plug' });
+          _setMainCard(
+            'Step 1 of 2',
+            'Connect Your Watch',
+            'Plug your ClockStar v2 into this computer with a USB-C cable, then click Connect and pick its serial port when your browser asks.',
+            'usb'
+          );
+
+          badge.className =
+            'flex items-center space-x-2 px-3.5 py-1.5 bg-rose-500/10 border border-rose-500/20 rounded-full text-xs font-medium text-rose-400';
+          badge.innerHTML =
+            '<span class="w-2 h-2 rounded-full bg-rose-500"></span><span>Disconnected</span>';
+        }
+      }
+
+      // ==========================================
+      // INTERRUPT & SAFEGUARD CHECKS
+      // ==========================================
+      async function sendCtrlC() {
+        logSerial('Sending Interrupt (Ctrl+C)...', 'warn');
+        try {
+          // The watch's idle loop can sleep up to 100ms per iteration at low
+          // clock (20MHz), so bytes sent faster than that can pile up in the
+          // RX buffer between checks instead of landing in separate wake
+          // windows. Space these well past 100ms and send fewer, longer.
+          for (let i = 0; i < 6; i++) {
+            await writeSerial('\x03');
+            await new Promise((r) => setTimeout(r, 180));
+          }
+          await writeSerial('\x02\r\n');
+          logSerial('Interrupt burst sent to watch.', 'info');
+        } catch (err) {
+          logSerial(`Failed to send Ctrl+C: ${err.message}`, 'error');
+        }
+      }
+
+      async function rebootWatch() {
+        logSerial('Sending Soft Reboot (Ctrl+D)...', 'cmd');
+        try {
+          await writeSerial('\x04');
+          logSerial('Reboot command sent to watch.', 'success');
+        } catch (err) {
+          logSerial(`Failed to reboot: ${err.message}`, 'error');
+        }
+      }
+
+      async function verifyMicroPythonInstalled() {
+        logSerial(
+          'Safeguard Check: Verifying MicroPython environment...',
+          'info'
+        );
+
+        // Give serial reader 300ms to collect any active streaming debug output
+        await new Promise((r) => setTimeout(r, 300));
+
+        // Check if watch is already outputting serial data (e.g. debug logs)
+        if (incomingBuffer.trim().length > 0) {
+          logSerial(
+            'Safeguard Passed: Live MicroPython serial output detected!',
+            'success'
+          );
+          return true;
+        }
+
+        // Send Ctrl+D exactly once to catch MicroPython on boot if it's not
+        // already running, then only ever send Ctrl+C after that. We just
+        // need to detect MicroPython here, not reach a stable prompt --
+        // repeatedly rebooting keeps re-triggering the firmware's own BLE
+        // init crash loop for no benefit.
+        logSerial('Sending single soft reboot to catch MicroPython...', 'cmd');
+        await writeSerial('\x04');
+        await new Promise((r) => setTimeout(r, 300));
+
+        for (let attempt = 1; attempt <= 10; attempt++) {
+          logSerial(
+            `Interrupt check (Attempt ${attempt}/10, no reboot)...`,
+            'cmd'
+          );
+
+          for (let i = 0; i < 3; i++) {
+            await writeSerial('\x03');
+            await new Promise((r) => setTimeout(r, 150));
+          }
+
+          if (
+            incomingBuffer.length > 0 ||
+            incomingBuffer.includes('Traceback') ||
+            incomingBuffer.includes('KeyboardInterrupt') ||
+            incomingBuffer.includes('>>>') ||
+            incomingBuffer.includes('raw REPL') ||
+            incomingBuffer.includes('MicroPython')
+          ) {
+            logSerial(
+              'Safeguard Passed: Valid MicroPython device detected!',
+              'success'
+            );
+            return true;
+          }
+        }
+
+        // Probe device platform
+        incomingBuffer = '';
+        try {
+          await writeSerial(
+            "\r\nimport sys; print('__MPY_CHECK__:' + sys.platform)\r\n"
+          );
+        } catch (e) {
+          logSerial('Warning writing verification probe: ' + e.message, 'warn');
+        }
+
+        const startTime = Date.now();
+        while (Date.now() - startTime < 2500) {
+          if (
+            incomingBuffer.includes('__MPY_CHECK__') ||
+            incomingBuffer.includes('MicroPython') ||
+            incomingBuffer.includes('>>>') ||
+            incomingBuffer.includes('esp32') ||
+            incomingBuffer.trim().length > 10
+          ) {
+            logSerial(
+              'Safeguard Passed: Valid MicroPython device detected!',
+              'success'
+            );
+            return true;
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+
+        logSerial(
+          'Safeguard Warning: MicroPython signature prompt not returned. Continuing with caution...',
+          'warn'
+        );
+        return true;
+      }
+
+      // ==========================================
+      // RAW REPL ENTER & EXIT
+      // ==========================================
+      function _logBufferSnapshot(label) {
+        const snapshot = incomingBuffer.trim();
+        if (snapshot.length > 0) {
+          logSerial(
+            `[${label}] raw output: ${JSON.stringify(snapshot)}`,
+            'info'
+          );
+        } else {
+          logSerial(`[${label}] raw output: (empty)`, 'warn');
+        }
+      }
+
+      async function enterRawRepl() {
+        logSerial('Attempting to enter MicroPython Raw REPL mode...', 'cmd');
+
+        // Send Ctrl+D exactly ONCE, before any retries, to stop main.py if
+        // it's currently running. Never send it again inside the loop below
+        // -- doing so on every attempt just keeps restarting main.py, which
+        // re-triggers its BLE init crash/reboot every single time and we
+        // never get a stable window to grab Raw REPL in.
+        incomingBuffer = '';
+        await writeSerial('\x04');
+        await new Promise((r) => setTimeout(r, 300));
+        _logBufferSnapshot('initial Ctrl+D');
+
+        for (let attempt = 1; attempt <= 10; attempt++) {
+          // Bail out early if the port died mid-loop (writeSerial nulls it on hard failure)
+          if (!port) {
+            logSerial(
+              'enterRawRepl: port is no longer connected, aborting retry loop.',
+              'error'
+            );
+            throw new Error('Serial port disconnected during Raw REPL entry.');
+          }
+
+          logSerial(
+            `Raw REPL entry attempt ${attempt}/10: interrupting (no reboot)...`,
+            'warn'
+          );
+
+          // Send Ctrl+C repeatedly, checking the buffer after EACH byte
+          // instead of blasting a full burst then checking afterward. The
+          // firmware's own BLE-init crash can trigger a self-reboot on its
+          // own (independent of anything we send) within ~1-2s, which can
+          // wipe out the ">>> " prompt before a blind post-burst check ever
+          // sees it. The moment we see the prompt, fire Ctrl+A immediately.
+          let gotPrompt = false;
+          for (let i = 0; i < 10 && !gotPrompt; i++) {
+            await writeSerial('\x03');
+            await new Promise((r) => setTimeout(r, 120));
+            if (
+              incomingBuffer.includes('>>>') ||
+              incomingBuffer.includes('raw REPL')
+            ) {
+              gotPrompt = true;
+            }
+            // If the watch crashes/reboots on its own mid-burst, main.py
+            // will restart itself with no help from us -- just keep sending
+            // Ctrl+C, don't add our own Ctrl+D on top of it.
+          }
+          _logBufferSnapshot(`attempt ${attempt} - after Ctrl+C burst`);
+
+          if (gotPrompt) {
+            // Fire Ctrl+A immediately -- don't clear the buffer or wait,
+            // every extra ms here is time the crash-reboot can use to wipe
+            // the prompt out from under us.
+            await writeSerial('\x01');
+          } else {
+            incomingBuffer = '';
+            await writeSerial('\x01');
+          }
+
+          const startTime = Date.now();
+          while (Date.now() - startTime < 1800) {
+            if (
+              incomingBuffer.includes('raw REPL; CTRL-B to exit') ||
+              incomingBuffer.includes('raw REPL')
+            ) {
+              logSerial(
+                'Entered MicroPython Raw REPL mode successfully.',
+                'success'
+              );
+              return true;
+            }
+            // If the firmware's BLE-init crash/reboot fires while we're
+            // waiting, no point burning the rest of this attempt's timeout
+            // -- bail immediately so the next attempt starts sooner.
+            if (
+              incomingBuffer.includes('Guru Meditation Error') ||
+              incomingBuffer.includes('ESP-ROM:')
+            ) {
+              logSerial(
+                `attempt ${attempt}: firmware crashed/rebooted mid-wait, moving to next attempt early.`,
+                'warn'
+              );
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 30));
+          }
+          _logBufferSnapshot(
+            `attempt ${attempt} - after Ctrl+A wait (no match)`
+          );
+        }
+
+        logSerial(
+          'Warning: Could not confirm Raw REPL prompt. Attempting execution anyway...',
+          'warn'
+        );
+        return false;
+      }
+
+      async function exitRawRepl() {
+        logSerial('Exiting Raw REPL and soft-resetting watch...', 'cmd');
+        try {
+          await writeSerial('\x02'); // Ctrl+B (Exit Raw REPL)
+          await new Promise((r) => setTimeout(r, 100));
+          await writeSerial('\x04'); // Ctrl+D (Soft Reboot)
+          logSerial('Watch rebooted into updated firmware!', 'success');
+        } catch (err) {
+          logSerial(`Error during exitRawRepl: ${err.message}`, 'warn');
+        }
+      }
+
+      async function execRawReplCommand(cmd) {
+        incomingBuffer = '';
+        await writeSerial(cmd + '\x04');
+
+        const startTime = Date.now();
+        while (Date.now() - startTime < 3500) {
+          if (incomingBuffer.includes('OK')) {
+            if (incomingBuffer.includes('Traceback')) {
+              const err = incomingBuffer.split('OK')[1] || incomingBuffer;
+              throw new Error(`MicroPython Error: ${err.trim()}`);
+            }
+            // Raw REPL always finishes a response with \x04\x04> (end of
+            // stdout, end of stderr, next prompt). Waiting for that full
+            // marker -- not just the leading "OK" -- before returning
+            // ensures the device has genuinely finished transmitting before
+            // we fire the next write. Firing the next command while the
+            // device's own TX of the previous response is still trailing
+            // off looks like exactly what's causing the recurring
+            // AbortError after 2-3 commands in a row.
+            const okIdx = incomingBuffer.indexOf('OK');
+            const afterOk = incomingBuffer.slice(okIdx + 2); // past "OK"
+            const eotCount = (afterOk.match(/\x04/g) || []).length;
+            if (eotCount >= 2) {
+              // Small settle delay on top of the marker, giving the
+              // device's UART/USB stack a moment to fully quiesce.
+              await new Promise((r) => setTimeout(r, 25));
+              return incomingBuffer;
+            }
+            // Saw "OK" but not yet both trailing \x04 markers -- keep
+            // waiting a bit longer in this same loop instead of returning
+            // early.
+          }
+          await new Promise((r) => setTimeout(r, 30));
+        }
+        logSerial(
+          `execRawReplCommand: timed out waiting for full response marker. Buffer so far: ${JSON.stringify(
+            incomingBuffer
+          )}`,
+          'warn'
+        );
+        return incomingBuffer;
+      }
+
+      // ==========================================
+      // COMPILER & INSTALLATION RUNNER
+      // ==========================================
+      async function startInstallation() {
+        if (!port) {
+          showNotification(
+            'Connect your watch first, then try installing again.',
+            'error'
+          );
+          return;
+        }
+
+        if (isFlashing) return;
+        isFlashing = true;
+        hideNotification();
+
+        const installBtn = document.getElementById('mainActionBtn');
+        const progressContainer = document.getElementById('progressContainer');
+
+        installBtn.disabled = true;
+        _setMainButton('Installing...', { disabled: true, icon: 'loader-2' });
+        _setMainCard(
+          'Step 2 of 2',
+          'Installing...',
+          'Flashing firmware and assets — keep the watch plugged in and this tab open.',
+          'download-cloud'
+        );
+        progressContainer.classList.remove('hidden');
+
+        logSerial('=== Starting ClockStar v2 Installation ===', 'cmd');
+
+        try {
+          // Step 1: Switch watch to Raw REPL
+          await enterRawRepl();
+
+          // Step 2: Ensure directories exist
+          logSerial('Preparing target directories on watch...', 'cmd');
+          await execRawReplCommand(
+            "import os, ubinascii\ntry:\n os.mkdir('icons')\nexcept:\n pass\n"
+          );
+
+          const total = INSTALL_FILES.length;
+          let completed = 0;
+          const startTime = Date.now();
+
+          // Step 3: Flash each file
+          for (let item of INSTALL_FILES) {
+            const fileName = typeof item === 'string' ? item : item.name;
+
+            updateProgress(completed, total, 'Installing...', startTime);
+
+            // settings.json holds the user's saved preferences (idle
+            // timeout, tilt-to-wake). If it already exists on the watch,
+            // skip re-flashing it so a reinstall doesn't wipe out settings
+            // the user has already configured. A fresh watch with no
+            // settings.json yet still gets the default one from the repo.
+            if (fileName === 'settings.json') {
+              let alreadyExists = false;
+              try {
+                const statResult = await execRawReplCommand(
+                  "import os\ntry:\n os.stat('settings.json')\n print('EXISTS')\nexcept OSError:\n print('MISSING')\n"
+                );
+                alreadyExists = statResult.includes('EXISTS');
+              } catch (e) {
+                logSerial(
+                  `Couldn't check for existing settings.json, will flash default: ${e.message}`,
+                  'warn'
+                );
+              }
+
+              if (alreadyExists) {
+                logSerial(
+                  'settings.json already exists on watch -- keeping existing settings, not overwriting.',
+                  'info'
+                );
+                completed++;
+                updateProgress(completed, total, 'Installing...', startTime);
+                continue;
+              }
+            }
+
+            const cdnUrl = REPO_BASE + fileName;
+            logSerial(`Fetching ${fileName} from CDN...`, 'info');
+
+            const res = await fetch(cdnUrl);
+            if (!res.ok)
+              throw new Error(`HTTP ${res.status} fetching ${fileName}`);
+
+            let fileData;
+
+            if (
+              fileName.endsWith('.py') ||
+              fileName.endsWith('.json') ||
+              fileName.endsWith('.txt')
+            ) {
+              // Plain text source -- always flashed as-is, no .mpy
+              // compilation. Keeping raw .py means normal Python tracebacks
+              // (with real line numbers) on-device instead of opaque .mpy
+              // bytecode errors, which matters a lot for debugging this
+              // firmware.
+              const sourceText = await res.text();
+              fileData = new TextEncoder().encode(sourceText);
+              logSerial(
+                `Transferring ${fileName} (${fileData.length} bytes, plain text)...`,
+                'info'
+              );
+            } else {
+              // Binary asset file (.spr sprites, etc.)
+              const arrayBuffer = await res.arrayBuffer();
+              fileData = new Uint8Array(arrayBuffer);
+              logSerial(
+                `Transferring ${fileName} (${fileData.length} bytes)...`,
+                'info'
+              );
+            }
+
+            // Write file to watch via Base64 chunking
+            await writeFileToWatch(fileName, fileData);
+
+            completed++;
+            updateProgress(completed, total, 'Installing...', startTime);
+          }
+
+          logSerial('=== All files flashed successfully! ===', 'success');
+          updateProgress(total, total, 'Installation Complete!', startTime);
+
+          // Step 4: Reboot Watch and capture what it prints, so we can
+          // confirm on the spot whether the install actually worked
+          // (normal boot log) or crashed (traceback), instead of the user
+          // having to unplug/replug or open a separate serial monitor.
+          logSerial('=== Rebooting watch to verify install ===', 'cmd');
+          incomingBuffer = '';
+          await exitRawRepl();
+
+          const verifyStart = Date.now();
+          const VERIFY_WINDOW_MS = 6000;
+          while (Date.now() - verifyStart < VERIFY_WINDOW_MS) {
+            await new Promise((r) => setTimeout(r, 200));
+          }
+          _logBufferSnapshot('post-install reboot output');
+
+          if (
+            incomingBuffer.includes('Traceback') ||
+            incomingBuffer.includes('Guru Meditation Error')
+          ) {
+            logSerial(
+              '=== Watch rebooted but raised an error -- check the output above. ===',
+              'error'
+            );
+            showNotification(
+              'Files were installed, but the watch hit an error on reboot. Open the logs to see what happened.',
+              'error'
+            );
+            _setMainCard(
+              'Step 2 of 2',
+              'Installed, With Errors',
+              'Files transferred, but the watch reported a problem on reboot. Check the logs for details.',
+              'alert-triangle'
+            );
+          } else {
+            logSerial(
+              '=== Watch rebooted with no errors detected. ===',
+              'success'
+            );
+            showNotification(
+              'All done! Your ClockStar v2 is running the latest firmware.',
+              'success'
+            );
+            _setMainCard(
+              'Step 2 of 2',
+              'Installation Complete',
+              'Your watch has been updated and rebooted successfully. You can disconnect it now, or reinstall any time.',
+              'check-circle-2'
+            );
+          }
+        } catch (err) {
+          logSerial(
+            `Fatal Installation Error: ${err.name || 'Error'} - ${err.message}`,
+            'error'
+          );
+          showNotification(
+            `Installation didn't finish: ${err.message}`,
+            'error'
+          );
+          _setMainCard(
+            'Step 2 of 2',
+            'Installation Failed',
+            'Something went wrong partway through. Open the logs for details, then try again.',
+            'alert-triangle'
+          );
+        } finally {
+          isFlashing = false;
+          installBtn.disabled = false;
+          _setMainButton('Install to Watch', {
+            disabled: false,
+            icon: 'download-cloud',
+          });
+        }
+      }
+
+      async function writeFileToWatch(filename, uint8Data) {
+        // Open file for binary writing
+        await execRawReplCommand(`f = open('${filename}', 'wb')`);
+
+        const chunkSize = 256;
+        for (let i = 0; i < uint8Data.length; i += chunkSize) {
+          const chunk = uint8Data.slice(i, i + chunkSize);
+          let binaryString = '';
+          for (let j = 0; j < chunk.length; j++) {
+            binaryString += String.fromCharCode(chunk[j]);
+          }
+          const b64 = btoa(binaryString);
+
+          // Write base64 chunk
+          await execRawReplCommand(`f.write(ubinascii.a2b_base64('${b64}'))`);
+
+          // Small breather between chunks -- this dense back-to-back
+          // write/read cycle over Raw REPL seems to be what triggers
+          // occasional AbortErrors on this device's native USB-CDC driver
+          // under sustained load. writeSerial already retries transient
+          // failures, but easing the pace reduces how often it needs to.
+          await new Promise((r) => setTimeout(r, 40));
+        }
+
+        // Close file
+        await execRawReplCommand(`f.close()`);
+        logSerial(`Wrote '${filename}' successfully.`, 'success');
+      }
+
+      function updateProgress(current, total, statusText, startTime) {
+        const percent = Math.round((current / total) * 100);
+
+        document.getElementById('progressStatusText').innerText = statusText;
+        document.getElementById(
+          'progressPercentText'
+        ).innerText = `${percent}%`;
+        document.getElementById('progressBarInner').style.width = `${percent}%`;
+        document.getElementById(
+          'currentFileText'
+        ).innerText = `File ${current}/${total}`;
+
+        const elapsedSec = (Date.now() - startTime) / 1000;
+        if (elapsedSec > 0 && current > 0) {
+          const estSpeed = ((current * 3.5) / elapsedSec).toFixed(1);
+          document.getElementById(
+            'transferRateText'
+          ).innerText = `Speed: ~${estSpeed} KB/s`;
+        }
+      }
+    </script>
+  </body>
+</html>
