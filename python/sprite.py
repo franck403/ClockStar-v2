@@ -3,40 +3,16 @@ import gc
 
 HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
-MAX_CHUNK_ROWS = 8
 
 
 def peek_size(path):
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
     if len(header) < HEADER_SIZE:
-        del header
-        gc.collect()
-        raise ValueError("sprite file too short for header: %s" % path)
-    width = header[0] | (header[1] << 8)
-    height = header[2] | (header[3] << 8)
-    del header
-    gc.collect()
-    return width, height
-
-
-def _darken_chunk(buf, nbytes, factor):
-    for i in range(0, nbytes, 2):
-        hi = buf[i]
-        lo = buf[i + 1]
-        pixel = (hi << 8) | lo
-
-        r5 = (pixel >> 11) & 0x1F
-        g6 = (pixel >> 5) & 0x3F
-        b5 = pixel & 0x1F
-
-        r5 = int(r5 * factor)
-        g6 = int(g6 * factor)
-        b5 = int(b5 * factor)
-
-        pixel = (r5 << 11) | (g6 << 5) | b5
-        buf[i] = (pixel >> 8) & 0xFF
-        buf[i + 1] = pixel & 0xFF
+        raise ValueError("Header mini miss")
+    w = header[0] | (header[1] << 8)
+    h = header[2] | (header[3] << 8)
+    return w, h
 
 
 def blit_file(
@@ -55,84 +31,45 @@ def blit_file(
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
         if len(header) < HEADER_SIZE:
-            del header
-            gc.collect()
-            raise ValueError("sprite file too short for header: %s" % path)
-        width = header[0] | (header[1] << 8)
-        height = header[2] | (header[3] << 8)
-        del header
+            return
 
-        row_bytes = width * BYTES_PER_PIXEL
-        chunk_rows = max(1, min(MAX_CHUNK_ROWS, height))
+        w = header[0] | (header[1] << 8)
+        h = header[2] | (header[3] << 8)
 
-        chunk_buf = bytearray(row_bytes * chunk_rows)
+        row_bytes = w * BYTES_PER_PIXEL
+        line_buf = bytearray(row_bytes)
+        line_fb = framebuf.FrameBuffer(line_buf, w, 1, framebuf.RGB565)
 
-        rows_done = 0
-        while rows_done < height:
-            rows_this_chunk = min(chunk_rows, height - rows_done)
-            nbytes = row_bytes * rows_this_chunk
-
-            mv = memoryview(chunk_buf)[:nbytes]
-            got = f.readinto(mv)
-            del mv
-
-            if got != nbytes:
-                del chunk_buf
-                gc.collect()
-                raise ValueError(
-                    "sprite file truncated: %s (wanted %d bytes, got %d)"
-                    % (path, nbytes, got)
-                )
+        for y in range(h):
+            if f.readinto(line_buf) != row_bytes:
+                break
 
             if darken is not None:
-                _darken_chunk(chunk_buf, nbytes, darken)
+                for i in range(0, row_bytes, 2):
+                    pixel = (line_buf[i] << 8) | line_buf[i + 1]
+                    r = int(((pixel >> 11) & 0x1F) * darken)
+                    g = int(((pixel >> 5) & 0x3F) * darken)
+                    b = int((pixel & 0x1F) * darken)
+                    px = (r << 11) | (g << 5) | b
+                    line_buf[i] = (px >> 8) & 0xFF
+                    line_buf[i + 1] = px & 0xFF
 
-            chunk_fb = framebuf.FrameBuffer(
-                chunk_buf, width, rows_this_chunk, framebuf.RGB565
-            )
-
-            if key is not None and palette is not None:
-                display.blit(chunk_fb, dst_x, dst_y + rows_done, int(key), palette)
+            cur_y = dst_y + y
+            if palette is not None and key is not None:
+                display.blit(line_fb, dst_x, cur_y, int(key), palette)
             elif key is not None:
-                display.blit(chunk_fb, dst_x, dst_y + rows_done, int(key))
+                display.blit(line_fb, dst_x, cur_y, int(key))
             else:
-                display.blit(chunk_fb, dst_x, dst_y + rows_done)
-
-            rows_done += rows_this_chunk
-            del chunk_fb
-
-        del chunk_buf
-
-    gc.collect()
+                display.blit(line_fb, dst_x, cur_y)
 
 
 def write_file(path, width, height, rgb565_bytes):
-    if width <= 0 or height <= 0:
-        raise ValueError("width/height must be positive")
-    if width > 65535 or height > 65535:
-        raise ValueError("width/height must fit in u16")
-    if width > 128 or height > 128:
-        raise ValueError("sprite exceeds 128x128 cap: %dx%d" % (width, height))
-
-    expected = width * height * BYTES_PER_PIXEL
-    if len(rgb565_bytes) != expected:
-        raise ValueError(
-            "pixel data is %d bytes, expected %d for %dx%d RGB565"
-            % (len(rgb565_bytes), expected, width, height)
-        )
-
-    header = bytearray(HEADER_SIZE)
-    header[0] = width & 0xFF
-    header[1] = (width >> 8) & 0xFF
-    header[2] = height & 0xFF
-    header[3] = (height >> 8) & 0xFF
-
+    header = bytearray(
+        [width & 0xFF, (width >> 8) & 0xFF, height & 0xFF, (height >> 8) & 0xFF]
+    )
     with open(path, "wb") as f:
         f.write(header)
         f.write(rgb565_bytes)
-
-    del header
-    gc.collect()
 
 
 class IconSet:
@@ -153,27 +90,17 @@ class IconSet:
         black_overlay=False,
     ):
         path = self.frames.get(state)
-        if path is None:
+        if not path:
             return
-        key = 0 if transparent else self.key
-        blit_file(display, path, x, y, key=key)
+
+        k = 0 if transparent else self.key
+        blit_file(display, path, x, y, key=k)
 
         if charging and self.overlay:
             palette = None
             pal_buf = None
             if black_overlay:
-                pal_buf = bytearray(4)
-                pal_buf[0] = 0x00
-                pal_buf[1] = 0x00
-                pal_buf[2] = 0x00
-                pal_buf[3] = 0x00
+                pal_buf = bytearray(b"\x00\x00\x00\x00")
                 palette = framebuf.FrameBuffer(pal_buf, 2, 1, framebuf.RGB565)
 
-            blit_file(display, self.overlay, x, y, key=key, palette=palette)
-
-            if palette is not None:
-                del palette
-            if pal_buf is not None:
-                del pal_buf
-
-        gc.collect()
+            blit_file(display, self.overlay, x, y, key=k, palette=palette)
