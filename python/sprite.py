@@ -84,30 +84,22 @@ def blit_file(
                     % (path, nbytes, got)
                 )
 
-            if nbytes == len(chunk_buf):
-                raw_bytes = chunk_buf
-            else:
-                raw_bytes = chunk_buf[:nbytes]
-
             if darken is not None:
-                _darken_chunk(raw_bytes, nbytes, darken)
+                _darken_chunk(chunk_buf, nbytes, darken)
 
             chunk_fb = framebuf.FrameBuffer(
-                raw_bytes, width, rows_this_chunk, framebuf.RGB565
+                chunk_buf, width, rows_this_chunk, framebuf.RGB565
             )
 
             if key is not None and palette is not None:
-                display.blit(chunk_fb, dst_x, dst_y + rows_done, key, palette)
+                display.blit(chunk_fb, dst_x, dst_y + rows_done, int(key), palette)
             elif key is not None:
-                display.blit(chunk_fb, dst_x, dst_y + rows_done, key)
+                display.blit(chunk_fb, dst_x, dst_y + rows_done, int(key))
             else:
                 display.blit(chunk_fb, dst_x, dst_y + rows_done)
 
             rows_done += rows_this_chunk
-
             del chunk_fb
-            if raw_bytes is not chunk_buf:
-                del raw_bytes
 
         del chunk_buf
 
