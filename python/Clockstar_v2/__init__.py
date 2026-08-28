@@ -116,6 +116,6 @@ def begin():
     imu.begin()
     rtc.begin()
     if display:
-        display.fill(ST7735.BLACK)
+        display.fill(Display.BLACK)
     backlight_on()
     buttons.scan()
