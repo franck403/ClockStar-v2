@@ -1,5 +1,6 @@
 import framebuf
 import gc
+import esp32
 
 HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
