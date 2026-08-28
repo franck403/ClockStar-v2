@@ -89,11 +89,11 @@ buttons = InputGPIO(
      Pins.get(Pins.BTN_SELECT), Pins.get(Pins.BTN_BACK)],
     inverted=False,
 )
-
-BTN_UP = const(0)
-BTN_DOWN = const(1)
-BTN_SELECT = const(2)
-BTN_BACK = const(3)
+class Buttons:
+    BTN_UP = const(0)
+    BTN_DOWN = const(1)
+    BTN_SELECT = const(2)
+    BTN_BACK = const(3)
 
 class Color:
     BLACK = 0
