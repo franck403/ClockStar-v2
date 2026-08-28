@@ -95,7 +95,7 @@ BTN_SELECT = const(2)
 BTN_BACK = const(3)
 
 class Color:
-    BLACK = 0,
+    BLACK = 0
     WHITE  = display.WHITE
     RED    = display.RED
     GREEN  = display.GREEN
@@ -104,7 +104,7 @@ class Color:
     CYAN   = display.CYAN
     GRAY   = display.GRAY
 
-Display.Color = Color
+display.Color = Color
 
 piezo = Piezo(Pins.get(Pins.BUZZ))
 rgb = RGBLed(Pins.get(Pins.LED_R), Pins.get(Pins.LED_G), Pins.get(Pins.LED_B), inverted=True)
