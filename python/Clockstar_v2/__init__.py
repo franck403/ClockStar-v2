@@ -2,13 +2,11 @@ from micropython import const
 from machine import SPI, Pin, I2C
 import efuse
 
-from lib.st7735_mini import ST7735
-from lib.piezo_mini import Piezo
-from lib.rgb_mini import RGBLed
-from lib.imu_mini import LSM6DS3TR
-from lib.rtc_mini import BM8563
-from lib.input_mini import InputGPIO
-
+from .st7735_mini import ST7735
+from .piezo_mini import Piezo
+from .rgb_mini import RGBLed
+from .imu_mini import LSM6DS3TR
+from .rtc_mini import BM8563
 
 class Pins:
     BL = const(0)
