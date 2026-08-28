@@ -90,10 +90,10 @@ buttons = InputGPIO(
     inverted=False,
 )
 class Buttons:
-    BTN_UP = const(0)
-    BTN_DOWN = const(1)
-    BTN_SELECT = const(2)
-    BTN_BACK = const(3)
+    Up = const(0)
+    Down = const(1)
+    Select = const(2)
+    Back = const(3)
 
 class Color:
     BLACK = 0
