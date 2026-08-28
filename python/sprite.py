@@ -5,9 +5,10 @@ HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
 MAX_WIDTH = 128
 
+print("before allcating rendering buffer", esp32.idf_heap_info(esp32.HEAP_DATA))
 _LINE_BUF = bytearray(MAX_WIDTH * BYTES_PER_PIXEL)
 _LINE_FB = framebuf.FrameBuffer(_LINE_BUF, MAX_WIDTH, 1, framebuf.RGB565)
-
+print("after allcating rendering buffer", esp32.idf_heap_info(esp32.HEAP_DATA))
 
 def peek_size(path):
     with open(path, "rb") as f:

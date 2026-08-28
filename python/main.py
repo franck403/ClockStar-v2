@@ -268,7 +268,6 @@ link = PhoneLink(
 )
 
 gc.collect()
-
 cs.begin()
 gc.collect()
 print("after cs.begin():", esp32.idf_heap_info(esp32.HEAP_DATA))
