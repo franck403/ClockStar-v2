@@ -88,7 +88,11 @@ buttons = InputGPIO(
      Pins.get(Pins.BTN_SELECT), Pins.get(Pins.BTN_BACK)],
     inverted=False,
 )
-BTN_UP, BTN_DOWN, BTN_SELECT, BTN_BACK = 0, 1, 2, 3
+
+BTN_UP = 0
+BTN_DOWN = 1
+BTN_SELECT = 2
+BTN_BACK = 3
 
 class Color:
     BLACK = 0,
@@ -99,7 +103,7 @@ class Color:
     YELLOW = display.YELLOW
     CYAN   = display.CYAN
     GRAY   = display.GRAY
-    
+
 Display.Color = Color
 
 piezo = Piezo(Pins.get(Pins.BUZZ))
