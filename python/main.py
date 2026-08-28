@@ -7,8 +7,8 @@ from phone_link import PhoneLink
 import battery
 import pedometer
 import render
-
 import sprite
+
 WIDTH = cs.display.width
 HEIGHT = cs.display.height
 
