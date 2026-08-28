@@ -7,6 +7,7 @@ from .piezo_mini import Piezo
 from .rgb_mini import RGBLed
 from .imu_mini import LSM6DS3TR
 from .rtc_mini import BM8563
+from .input_min import InputGPIO
 
 class Pins:
     BL = 0
