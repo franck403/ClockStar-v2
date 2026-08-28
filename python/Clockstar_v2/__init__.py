@@ -105,7 +105,8 @@ class Color:
     CYAN   = display.CYAN
     GRAY   = display.GRAY
 
-Display.Color = Color
+class Display:
+    Color = Color
 
 piezo = Piezo(Pins.get(Pins.BUZZ))
 rgb = RGBLed(Pins.get(Pins.LED_R), Pins.get(Pins.LED_G), Pins.get(Pins.LED_B), inverted=True)
