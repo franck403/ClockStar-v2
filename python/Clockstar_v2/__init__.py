@@ -27,7 +27,6 @@ class Pins:
     BTN_SELECT = const(15)
     BTN_BACK = const(16)
 
-    # Seule la rev2 existe en pratique -> une seule table de mapping.
     _MAP = {
         BL: 9, BATT: 10, CHARGE: 36,
         TFT_SCK: 48, TFT_MOSI: 34, TFT_DC: 33, TFT_RST: 47,
@@ -44,7 +43,6 @@ class Pins:
 
 revision = efuse.read_rev()
 
-# --- SPI / TFT ---
 spi_tft = SPI(1, baudrate=27000000, polarity=0, phase=0,
               sck=Pin(Pins.get(Pins.TFT_SCK)), mosi=Pin(Pins.get(Pins.TFT_MOSI)))
 
@@ -59,7 +57,6 @@ def backlight_off():
     backlight.value(0)
 
 
-# rev1 -> rotation fixe 2, pas d'offset. rev2 -> rotation 0xC0-equivalente avec offset x=0,y=32.
 if revision == 1:
     display = ST7735(
         spi_tft,
@@ -77,23 +74,33 @@ elif revision == 2:
         x_offset=0, y_offset=32,
     )
     display.init(rotation=0)
-    display.set_rotation(2)  # equivalent au 0xC0 utilise par la rev2 d'origine
+    display.set_rotation(2)
 else:
     display = None
     print("Unknown revision", revision)
 
-# --- I2C / IMU / RTC ---
 i2c = I2C(0, sda=Pin(Pins.get(Pins.I2C_SDA)), scl=Pin(Pins.get(Pins.I2C_SCL)))
 imu = LSM6DS3TR(i2c)
 rtc = BM8563(i2c)
 
-# --- Boutons / buzzer / RGB ---
 buttons = InputGPIO(
     [Pins.get(Pins.BTN_UP), Pins.get(Pins.BTN_DOWN),
      Pins.get(Pins.BTN_SELECT), Pins.get(Pins.BTN_BACK)],
     inverted=False,
 )
 BTN_UP, BTN_DOWN, BTN_SELECT, BTN_BACK = 0, 1, 2, 3
+
+class Color:
+    BLACK = 0,
+    WHITE  = display.WHITE
+    RED    = display.RED
+    GREEN  = display.GREEN
+    BLUE   = display.BLUE
+    YELLOW = display.YELLOW
+    CYAN   = display.CYAN
+    GRAY   = display.GRAY
+    
+Display.Color = Color
 
 piezo = Piezo(Pins.get(Pins.BUZZ))
 rgb = RGBLed(Pins.get(Pins.LED_R), Pins.get(Pins.LED_G), Pins.get(Pins.LED_B), inverted=True)
