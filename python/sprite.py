@@ -3,13 +3,18 @@ import gc
 
 HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
+MAX_WIDTH = 128
+
+_LINE_BUF = bytearray(MAX_WIDTH * BYTES_PER_PIXEL)
+_PAL_BUF = bytearray(4)
+_PAL_FB = framebuf.FrameBuffer(_PAL_BUF, 2, 1, framebuf.RGB565)
 
 
 def peek_size(path):
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
     if len(header) < HEADER_SIZE:
-        raise ValueError("Header mini miss")
+        raise ValueError("Header too short")
     w = header[0] | (header[1] << 8)
     h = header[2] | (header[3] << 8)
     return w, h
@@ -36,23 +41,27 @@ def blit_file(
         w = header[0] | (header[1] << 8)
         h = header[2] | (header[3] << 8)
 
+        if w > MAX_WIDTH:
+            return
+
         row_bytes = w * BYTES_PER_PIXEL
-        line_buf = bytearray(row_bytes)
-        line_fb = framebuf.FrameBuffer(line_buf, w, 1, framebuf.RGB565)
+        mv = memoryview(_LINE_BUF)[:row_bytes]
 
         for y in range(h):
-            if f.readinto(line_buf) != row_bytes:
+            if f.readinto(mv) != row_bytes:
                 break
 
             if darken is not None:
                 for i in range(0, row_bytes, 2):
-                    pixel = (line_buf[i] << 8) | line_buf[i + 1]
+                    pixel = (_LINE_BUF[i] << 8) | _LINE_BUF[i + 1]
                     r = int(((pixel >> 11) & 0x1F) * darken)
                     g = int(((pixel >> 5) & 0x3F) * darken)
                     b = int((pixel & 0x1F) * darken)
                     px = (r << 11) | (g << 5) | b
-                    line_buf[i] = (px >> 8) & 0xFF
-                    line_buf[i + 1] = px & 0xFF
+                    _LINE_BUF[i] = (px >> 8) & 0xFF
+                    _LINE_BUF[i + 1] = px & 0xFF
+
+            line_fb = framebuf.FrameBuffer(mv, w, 1, framebuf.RGB565)
 
             cur_y = dst_y + y
             if palette is not None and key is not None:
@@ -97,10 +106,5 @@ class IconSet:
         blit_file(display, path, x, y, key=k)
 
         if charging and self.overlay:
-            palette = None
-            pal_buf = None
-            if black_overlay:
-                pal_buf = bytearray(b"\x00\x00\x00\x00")
-                palette = framebuf.FrameBuffer(pal_buf, 2, 1, framebuf.RGB565)
-
+            palette = _PAL_FB if black_overlay else None
             blit_file(display, self.overlay, x, y, key=k, palette=palette)
