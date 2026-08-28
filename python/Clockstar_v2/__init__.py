@@ -9,23 +9,23 @@ from .imu_mini import LSM6DS3TR
 from .rtc_mini import BM8563
 
 class Pins:
-    BL = const(0)
-    BATT = const(1)
-    CHARGE = const(2)
-    TFT_SCK = const(3)
-    TFT_MOSI = const(4)
-    TFT_DC = const(5)
-    TFT_RST = const(6)
-    I2C_SDA = const(7)
-    I2C_SCL = const(8)
-    LED_R = const(9)
-    LED_G = const(10)
-    LED_B = const(11)
-    BUZZ = const(12)
-    BTN_UP = const(13)
-    BTN_DOWN = const(14)
-    BTN_SELECT = const(15)
-    BTN_BACK = const(16)
+    BL = 0
+    BATT = 1
+    CHARGE = 2
+    TFT_SCK = 3
+    TFT_MOSI = 4
+    TFT_DC = 5
+    TFT_RST = 6
+    I2C_SDA = 7
+    I2C_SCL = 8
+    LED_R = 9
+    LED_G = 10
+    LED_B = 11
+    BUZZ = 12
+    BTN_UP = 13
+    BTN_DOWN = 14
+    BTN_SELECT = 15
+    BTN_BACK = 16
 
     _MAP = {
         BL: 9, BATT: 10, CHARGE: 36,
@@ -104,7 +104,7 @@ class Color:
     CYAN   = display.CYAN
     GRAY   = display.GRAY
 
-display.Color = Color
+ST7735.Color = Color
 
 piezo = Piezo(Pins.get(Pins.BUZZ))
 rgb = RGBLed(Pins.get(Pins.LED_R), Pins.get(Pins.LED_G), Pins.get(Pins.LED_B), inverted=True)
