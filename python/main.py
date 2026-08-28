@@ -294,14 +294,38 @@ def _mark_dirty():
     _dirty = True
 
 
+# ---------------------------------------------------------------------------
+# Delayed sync -> clock screen transition
+# ---------------------------------------------------------------------------
+# BLE time-sync lands as a burst of several small packets right as pairing
+# completes (see the MTU-truncation notes -- writes over ~20 bytes get
+# split/truncated with no clean boundary). Switching to SCREEN_CLOCK the
+# instant set_rtc() fires used to immediately trigger the first full-screen
+# blit_file() of the session (clock_bg.spr is the largest sprite drawn
+# anywhere in the app) while that BLE burst was still actively landing.
+# That collision between the heavy display blit and concurrent BLE RX
+# appears to be what corrupts state badly enough to crash cs.begin() on
+# the *next* boot -- not the icon draw on the lock screen itself.
+#
+# Fix: _on_sync_acquired() no longer flips _screen directly. It just arms
+# a timer. main_loop() only performs the actual switch to SCREEN_CLOCK
+# once SYNC_TRANSITION_DELAY_MS has passed with no further action needed,
+# giving the BLE stack a few poll cycles to drain the burst before the
+# first heavy draw happens. The lock screen keeps rendering normally
+# during that window, so there's no visible glitch -- it just holds the
+# "Connected..." state a beat longer before handing off to the clock.
+SYNC_TRANSITION_DELAY_MS = 400
+_sync_transition_pending_at = None
+
+
 def _on_sync_acquired():
     """Called once, the moment a real time sync lands (either via BLE
-    set_rtc, or found already valid in the RTC chip at boot). Releases
-    the lock screen back to the clock if that's where we were stuck."""
-    global _screen, _sync_screen_battery_drawn
+    set_rtc, or found already valid in the RTC chip at boot). Does NOT
+    switch screens immediately -- see SYNC_TRANSITION_DELAY_MS note above.
+    Arms the delayed transition instead, which main_loop() carries out."""
+    global _sync_transition_pending_at
     if _screen == SCREEN_SYNC_LOCK:
-        _screen = SCREEN_CLOCK
-        _sync_screen_battery_drawn = False
+        _sync_transition_pending_at = time.ticks_ms()
     _mark_dirty()
 
 
@@ -1218,6 +1242,7 @@ def main_loop():
     global _dirty, last_activity
     global _select_held, _select_hold_start, _select_press_woke_dark_screen, _slide_active, _slide_progress
     global _screen, _synced
+    global _sync_transition_pending_at, _sync_screen_battery_drawn
     last_second = -1
     last_pairing_poll = time.ticks_ms()
     last_battery_poll = time.ticks_ms()
@@ -1304,6 +1329,20 @@ def main_loop():
         if time.ticks_diff(now, last_pairing_poll) >= ble_poll_interval:
             link.poll()
             last_pairing_poll = now
+
+        # Delayed sync -> clock screen handoff. See SYNC_TRANSITION_DELAY_MS
+        # note near _on_sync_acquired(): the actual screen switch happens
+        # here, SYNC_TRANSITION_DELAY_MS after set_rtc() first landed, not
+        # the instant it lands -- giving link.poll() a few cycles above to
+        # drain any BLE burst still arriving before the first heavy
+        # blit_file() (clock_bg.spr) of the session fires.
+        if (_sync_transition_pending_at is not None
+                and time.ticks_diff(now, _sync_transition_pending_at) >= SYNC_TRANSITION_DELAY_MS):
+            _sync_transition_pending_at = None
+            _screen = SCREEN_CLOCK
+            _sync_screen_battery_drawn = False
+            last_screen = _screen
+            _mark_dirty()
 
         battery_row_open = (
             _screen == SCREEN_SETTINGS
