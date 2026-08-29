@@ -17,6 +17,7 @@ rtc = cs.rtc
 buttons = cs.buttons
 piezo = cs.piezo
 Color = cs.Display.Color
+print(color)
 Buttons = cs.Buttons
 
 BG_SPRITE_PATH = "clock_bg.spr"
