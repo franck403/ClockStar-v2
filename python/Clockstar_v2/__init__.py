@@ -42,6 +42,8 @@ class Pins:
         return cls._MAP.get(logical_pin, -1)
 
 
+pins = Pins
+
 revision = efuse.read_rev()
 
 spi_tft = SPI(1, baudrate=27000000, polarity=0, phase=0,
