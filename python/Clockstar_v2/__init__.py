@@ -41,8 +41,37 @@ class Pins:
     def get(cls, logical_pin):
         return cls._MAP.get(logical_pin, -1)
 
+class pins:
+    BL = 0
+    BATT = 1
+    CHARGE = 2
+    TFT_SCK = 3
+    TFT_MOSI = 4
+    TFT_DC = 5
+    TFT_RST = 6
+    I2C_SDA = 7
+    I2C_SCL = 8
+    LED_R = 9
+    LED_G = 10
+    LED_B = 11
+    BUZZ = 12
+    BTN_UP = 13
+    BTN_DOWN = 14
+    BTN_SELECT = 15
+    BTN_BACK = 16
 
-pins = Pins
+    _MAP = {
+        BL: 9, BATT: 10, CHARGE: 36,
+        TFT_SCK: 48, TFT_MOSI: 34, TFT_DC: 33, TFT_RST: 47,
+        I2C_SDA: 4, I2C_SCL: 5,
+        LED_R: 8, LED_G: 7, LED_B: 6,
+        BUZZ: 11,
+        BTN_UP: 40, BTN_DOWN: 38, BTN_SELECT: 39, BTN_BACK: 37,
+    }
+
+    @classmethod
+    def get(cls, logical_pin):
+        return cls._MAP.get(logical_pin, -1)
 
 revision = efuse.read_rev()
 
