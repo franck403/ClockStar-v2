@@ -285,7 +285,7 @@ class ST7735:
                 x -= 1
                 err -= 2 * x + 1
 
-    def text(self, x, y, s, color, size=1, bg=None):
+    def text(self, s, x, y, color, size=1, bg=None):
         """Texte via la police du driver (self.font), dict Width/Height/Start/End/Data (1bpp colonnes)."""
         font = self.font
         px = x
