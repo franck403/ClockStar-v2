@@ -8,6 +8,7 @@ import battery
 import pedometer
 import render
 import sprite
+import gc
 
 WIDTH = cs.display.width
 HEIGHT = cs.display.height
