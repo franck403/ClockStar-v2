@@ -429,7 +429,7 @@ def draw_sync_lock_screen(full_redraw=True):
     else:
         status = "Waiting" + _SYNC_DOT_FRAMES[_sync_anim_idx]
     display.text(status, (WIDTH - len(status) * 8) // 2, status_y, Color.White)
-    print('a')
+    print("bs=", bs, "backlight pin=", cs.backlight.value())
 
 
 def _sync_lock_tick_anim():
