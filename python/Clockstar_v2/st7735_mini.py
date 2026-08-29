@@ -221,6 +221,10 @@ class ST7735:
         if self.cs:
             self.cs(1)
 
+    def fill_rect(self, x, y, w, h, color):
+        """Alias de fillrect (compat framebuf-style naming)."""
+        self.fillrect(x, y, w, h, color)
+
     def rect(self, x, y, w, h, color):
         self.fillrect(x, y, w, 1, color)
         self.fillrect(x, y + h - 1, w, 1, color)
