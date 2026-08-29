@@ -9,6 +9,16 @@ ROTATIONS = [0x00, 0x60, 0xC0, 0xA0]
 BGR = 0x08
 RGB = 0x00
 
+# Police par defaut : 5x7, 1bpp, colonnes (font["Data"] = bytes, une colonne par byte)
+# ASCII 32-126. Remplace ce dict par ta propre police si besoin.
+DEFAULT_FONT = {
+    "Width": 5,
+    "Height": 7,
+    "Start": 32,
+    "End": 126,
+    "Data": b"",  # a completer avec les donnees de police reelles
+}
+
 
 def color565(r, g, b):
     """RGB 0-255 -> couleur 16 bits (565)."""
@@ -54,7 +64,7 @@ class ST7735:
     GRAY = color565(0x80, 0x80, 0x80)
 
     def __init__(self, spi, dc, reset, cs=None, width=128, height=128,
-                 bgr=True, x_offset=0, y_offset=0):
+                 bgr=True, x_offset=0, y_offset=0, font=None):
         self.spi = spi
         self.dc = dc
         self.reset_pin = reset
@@ -67,6 +77,7 @@ class ST7735:
         self.rotation = 0
         self._color_buf = bytearray(2)
         self._win_buf = bytearray(4)
+        self.font = font or DEFAULT_FONT
 
     # ---- bas niveau ----
 
@@ -274,8 +285,9 @@ class ST7735:
                 x -= 1
                 err -= 2 * x + 1
 
-    def text(self, x, y, s, color, font, size=1, bg=None):
-        """Texte via une police framebuf-like: dict Width/Height/Start/End/Data (1bpp colonnes)."""
+    def text(self, x, y, s, color, size=1, bg=None):
+        """Texte via la police du driver (self.font), dict Width/Height/Start/End/Data (1bpp colonnes)."""
+        font = self.font
         px = x
         py = y
         w = font["Width"] * size + 1
@@ -284,13 +296,14 @@ class ST7735:
                 py += font["Height"] * size + 1
                 px = x
                 continue
-            self._char(px, py, ch, color, font, size, bg)
+            self._char(px, py, ch, color, size, bg)
             px += w
             if px + w > self.width:
                 py += font["Height"] * size + 1
                 px = x
 
-    def _char(self, x, y, ch, color, font, size, bg):
+    def _char(self, x, y, ch, color, size, bg):
+        font = self.font
         start, end = font["Start"], font["End"]
         ci = ord(ch)
         if not (start <= ci <= end):
