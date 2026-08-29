@@ -135,6 +135,15 @@ class Color:
     YELLOW = display.YELLOW
     CYAN   = display.CYAN
     GRAY   = display.GRAY
+    Black = 0
+    White  = display.WHITE
+    Red    = display.RED
+    Green  = display.GREEN
+    Blue   = display.BLUE
+    Yellow = display.YELLOW
+    Cyan   = display.CYAN
+    Gray   = display.GRAY
+
 
 class Display:
     Color = Color
