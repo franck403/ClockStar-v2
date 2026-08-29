@@ -1,17 +1,13 @@
 from micropython import const
 
-
 def _bcd2dec(b):
     return (b >> 4) * 10 + (b & 0x0F)
-
 
 def _dec2bcd(d):
     return ((d // 10) << 4) | (d % 10)
 
-
 def _clamp(v, lo, hi):
     return max(lo, min(v, hi))
-
 
 class Time:
     __slots__ = ("year", "month", "day", "hours", "minutes", "seconds")
@@ -23,7 +19,6 @@ class Time:
         self.hours = hours
         self.minutes = minutes
         self.seconds = seconds
-
 
 class BM8563:
     ADDR = const(0x51)
@@ -73,9 +68,57 @@ class BM8563:
             _dec2bcd(t.minutes) & 0x7F,
             _dec2bcd(t.hours) & 0x3F,
             _dec2bcd(t.day) & 0x3F,
-            0x00,  # weekday, ignore
+            0x00,
             month_byte,
             _dec2bcd(t.year % 100),
         ])
         self.i2c.writeto(self.addr, data)
         self.get_time()
+
+    def get_seconds(self):
+        return self.get_time().seconds
+
+    def set_seconds(self, value):
+        t = self.get_time()
+        t.seconds = value
+        self.set_time(t)
+
+    def get_minutes(self):
+        return self.get_time().minutes
+
+    def set_minutes(self, value):
+        t = self.get_time()
+        t.minutes = value
+        self.set_time(t)
+
+    def get_hours(self):
+        return self.get_time().hours
+
+    def set_hours(self, value):
+        t = self.get_time()
+        t.hours = value
+        self.set_time(t)
+
+    def get_day(self):
+        return self.get_time().day
+
+    def set_day(self, value):
+        t = self.get_time()
+        t.day = value
+        self.set_time(t)
+
+    def get_month(self):
+        return self.get_time().month
+
+    def set_month(self, value):
+        t = self.get_time()
+        t.month = value
+        self.set_time(t)
+
+    def get_year(self):
+        return self.get_time().year
+
+    def set_year(self, value):
+        t = self.get_time()
+        t.year = value
+        self.set_time(t)
