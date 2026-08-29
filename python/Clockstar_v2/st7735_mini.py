@@ -1,5 +1,6 @@
-# Driver ST7735 minimal (fill / pixel / rect / line / circle / texte)
-# Pas de dependance externe, pas de @micropython.native, RAM/flash reduits.
+# Driver ST7735 avec framebuffer RAM (fill / pixel / rect / line / circle / texte)
+# Dessine dans un buffer bytearray, commit() envoie tout d'un coup au SPI.
+# Pas de dependance externe, pas de @micropython.native.
 
 import time
 from machine import Pin
@@ -75,11 +76,13 @@ class ST7735:
         self.x_offset = x_offset
         self.y_offset = y_offset
         self.rotation = 0
-        self._color_buf = bytearray(2)
         self._win_buf = bytearray(4)
         self.font = font or DEFAULT_FONT
 
-    # ---- bas niveau ----
+        # Framebuffer RGB565 : 2 bytes/pixel, big-endian (comme attendu par le controleur)
+        self.buf = bytearray(self.width * self.height * 2)
+
+    # ---- bas niveau (SPI) ----
 
     def _cmd(self, c):
         self.dc(0)
@@ -118,6 +121,7 @@ class ST7735:
         rot &= 3
         if (self.rotation ^ rot) & 1:
             self.width, self.height = self.height, self.width
+            self.buf = bytearray(self.width * self.height * 2)
         self.rotation = rot
         self._madctl()
 
@@ -167,7 +171,7 @@ class ST7735:
         self._cmd(self.DISPON)
         time.sleep_ms(100)
 
-    # ---- fenetre / dessin ----
+    # ---- fenetre (pour commit) ----
 
     def _set_window(self, x0, y0, x1, y1):
         x0 += self.x_offset
@@ -191,12 +195,23 @@ class ST7735:
 
         self._cmd(self.RAMWR)
 
+    def commit(self):
+        """Envoie tout le framebuffer RAM vers l'ecran en un seul blit SPI."""
+        self._set_window(0, 0, self.width - 1, self.height - 1)
+        self.dc(1)
+        if self.cs:
+            self.cs(0)
+        self.spi.write(self.buf)
+        if self.cs:
+            self.cs(1)
+
+    # ---- dessin (dans le framebuffer) ----
+
     def pixel(self, x, y, color):
         if 0 <= x < self.width and 0 <= y < self.height:
-            self._set_window(x, y, x, y)
-            self._color_buf[0] = color >> 8
-            self._color_buf[1] = color & 0xFF
-            self._data(self._color_buf)
+            i = (y * self.width + x) * 2
+            self.buf[i] = color >> 8
+            self.buf[i + 1] = color & 0xFF
 
     def fillrect(self, x, y, w, h, color):
         x0 = clamp(x, 0, self.width)
@@ -206,23 +221,19 @@ class ST7735:
         if x1 < x0 or y1 < y0:
             return
 
-        self._set_window(x0, y0, x1, y1)
-        npix = (x1 - x0 + 1) * (y1 - y0 + 1)
-        cbuf = bytes([color >> 8, color & 0xFF]) * 32
-
-        self.dc(1)
-        if self.cs:
-            self.cs(0)
-        full, rest = divmod(npix, 32)
-        for _ in range(full):
-            self.spi.write(cbuf)
-        if rest:
-            self.spi.write(bytes([color >> 8, color & 0xFF]) * rest)
-        if self.cs:
-            self.cs(1)
+        hi = color >> 8
+        lo = color & 0xFF
+        row = bytes([hi, lo]) * (x1 - x0 + 1)
+        buf = self.buf
+        stride = self.width * 2
+        row_start = x0 * 2
+        row_end = row_start + len(row)
+        for yy in range(y0, y1 + 1):
+            off = yy * stride
+            buf[off + row_start:off + row_end] = row
 
     def fill_rect(self, x, y, w, h, color):
-        """Alias de fillrect (compat framebuf-style naming)."""
+        """Alias de fillrect (compat main.py)."""
         self.fillrect(x, y, w, h, color)
 
     def rect(self, x, y, w, h, color):
