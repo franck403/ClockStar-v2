@@ -3,6 +3,7 @@
 # Pas de dependance externe, pas de @micropython.native.
 
 import time
+import framebuf
 from machine import Pin
 
 # MADCTL rotation bits (regarder l'ecran pins en haut)
@@ -10,15 +11,11 @@ ROTATIONS = [0x00, 0x60, 0xC0, 0xA0]
 BGR = 0x08
 RGB = 0x00
 
-# Police par defaut : 5x7, 1bpp, colonnes (font["Data"] = bytes, une colonne par byte)
-# ASCII 32-126. Remplace ce dict par ta propre police si besoin.
-DEFAULT_FONT = {
-    "Width": 5,
-    "Height": 7,
-    "Start": 32,
-    "End": 126,
-    "Data": b"",  # a completer avec les donnees de police reelles
-}
+# Police texte : on delegue a framebuf.FrameBuffer.text(), qui embarque sa
+# propre police 8x8 en C (meme police que text_2x utilise deja dans
+# render.py). Ca evite d'avoir une police custom a maintenir/remplir.
+_FB_CHAR_W = 8
+_FB_CHAR_H = 8
 
 
 def color565(r, g, b):
@@ -65,7 +62,7 @@ class ST7735:
     GRAY = color565(0x80, 0x80, 0x80)
 
     def __init__(self, spi, dc, reset, cs=None, width=128, height=128,
-                 bgr=True, x_offset=0, y_offset=0, font=None):
+                 bgr=True, x_offset=0, y_offset=0):
         self.spi = spi
         self.dc = dc
         self.reset_pin = reset
@@ -77,10 +74,11 @@ class ST7735:
         self.y_offset = y_offset
         self.rotation = 0
         self._win_buf = bytearray(4)
-        self.font = font or DEFAULT_FONT
 
         # Framebuffer RGB565 : 2 bytes/pixel, big-endian (comme attendu par le controleur)
         self.buf = bytearray(self.width * self.height * 2)
+        # Vue framebuf sur le meme buffer, pour text()/scroll etc.
+        self._fb = framebuf.FrameBuffer(self.buf, self.width, self.height, framebuf.RGB565)
 
     # ---- bas niveau (SPI) ----
 
@@ -122,6 +120,7 @@ class ST7735:
         if (self.rotation ^ rot) & 1:
             self.width, self.height = self.height, self.width
             self.buf = bytearray(self.width * self.height * 2)
+            self._fb = framebuf.FrameBuffer(self.buf, self.width, self.height, framebuf.RGB565)
         self.rotation = rot
         self._madctl()
 
@@ -301,42 +300,20 @@ class ST7735:
                 err -= 2 * x + 1
 
     def text(self, s, x, y, color, size=1, bg=None):
-        """Texte via la police du driver (self.font), dict Width/Height/Start/End/Data (1bpp colonnes)."""
-        font = self.font
-        px = x
-        py = y
-        w = font["Width"] * size + 1
-        for ch in s:
-            if ch == "\n":
-                py += font["Height"] * size + 1
-                px = x
-                continue
-            self._char(px, py, ch, color, size, bg)
-            px += w
-            if px + w > self.width:
-                py += font["Height"] * size + 1
-                px = x
+        """Texte via framebuf.FrameBuffer.text() (police 8x8 integree),
+        ecrit directement dans self.buf. size>1 fait un rendu a l'echelle
+        via un scratch buffer puis blit pixel-par-pixel (comme text_2x)."""
+        if bg is not None:
+            self.fillrect(x, y, len(s) * _FB_CHAR_W * size, _FB_CHAR_H * size, bg)
 
-    def _char(self, x, y, ch, color, size, bg):
-        font = self.font
-        start, end = font["Start"], font["End"]
-        ci = ord(ch)
-        if not (start <= ci <= end):
+        if size <= 1:
+            self._fb.text(s, x, y, color)
             return
-        fw, fh = font["Width"], font["Height"]
-        offs = (ci - start) * fw
-        col_data = font["Data"][offs:offs + fw]
 
-        for cx, col in enumerate(col_data):
-            for cy in range(fh):
-                on = col & (1 << cy)
-                if on:
-                    if size <= 1:
-                        self.pixel(x + cx, y + cy, color)
-                    else:
-                        self.fillrect(x + cx * size, y + cy * size, size, size, color)
-                elif bg is not None:
-                    if size <= 1:
-                        self.pixel(x + cx, y + cy, bg)
-                    else:
-                        self.fillrect(x + cx * size, y + cy * size, size, size, bg)
+        src_w, src_h = len(s) * _FB_CHAR_W, _FB_CHAR_H
+        scratch = framebuf.FrameBuffer(bytearray(src_w * src_h * 2), src_w, src_h, framebuf.RGB565)
+        scratch.text(s, 0, 0, color)
+        for sy in range(src_h):
+            for sx in range(src_w):
+                if scratch.pixel(sx, sy):
+                    self.fillrect(x + sx * size, y + sy * size, size, size, color)
