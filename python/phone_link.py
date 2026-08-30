@@ -115,8 +115,11 @@ class PhoneLink:
         )
 
     def poll(self):
-        """Call from the main loop; drives bonding follow-up (see ble_nus.py)."""
-        self.uart.poll_pairing()
+        """Call from the main loop. Drains everything ble_nus.py deferred
+        out of the BLE IRQ context -- connect/disconnect callbacks, bond
+        status updates, and incoming lines all get dispatched from here,
+        not from inside the radio's interrupt handler."""
+        self.uart.poll()
 
     @property
     def is_bonded(self):
@@ -209,6 +212,7 @@ class PhoneLink:
             return
 
         parts = _split_protocol_msg(line)
+        print("DEBUG: _handle_line raw:", line, "-> parts:", parts)
         if not parts:
             return
         command = parts[0]
@@ -235,8 +239,11 @@ class PhoneLink:
                 ts = int(parts[1])
                 tz_offset = int(parts[2])
             except ValueError:
+                print("DEBUG: time command bad ints:", parts)
                 return
+            print("DEBUG: time command parsed ts=", ts, "tz_offset=", tz_offset)
             if ts == 0:
+                print("DEBUG: time command ts==0, ignoring")
                 return
             if self._on_time:
                 self._on_time(ts, tz_offset)

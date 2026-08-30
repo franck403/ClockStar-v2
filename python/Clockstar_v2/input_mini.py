@@ -32,3 +32,12 @@ class InputGPIO:
                 cb = self._on_press[i] if pressed else self._on_release[i]
                 if cb:
                     cb()
+
+    def poll(self):
+        self.scan()
+
+    def was_pressed(self, i):
+        return self.state(i)
+
+    def is_pressed(self, i):
+        return self.state(i)

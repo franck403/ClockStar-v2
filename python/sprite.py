@@ -1,16 +1,17 @@
 import framebuf
-import gc
-import esp32
+import micropython
+import machine
 
 HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
 MAX_WIDTH = 128
-
-print("before allcating rendering buffer", esp32.idf_heap_info(esp32.HEAP_DATA))
-_LINE_BUF = bytearray(MAX_WIDTH * BYTES_PER_PIXEL)
-_LINE_FB = framebuf.FrameBuffer(_LINE_BUF, MAX_WIDTH, 1, framebuf.RGB565)
-print("after allcating rendering buffer", esp32.idf_heap_info(esp32.HEAP_DATA))
-
+CHUNK_ROWS = 16
+try:
+    _CHUNK_BUF = bytearray(MAX_WIDTH * BYTES_PER_PIXEL * CHUNK_ROWS)
+except:
+    print('not enough ram')
+    machine.reset()
+    
 def peek_size(path):
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
@@ -20,6 +21,79 @@ def peek_size(path):
     h = header[2] | (header[3] << 8)
     return w, h
 
+@micropython.viper
+def fast_fill(buf_in, num_pixels: int, color: int):
+    buf32 = ptr32(buf_in)
+    hi = (color >> 8) & 255
+    lo = color & 255
+    c32 = int(hi | (lo << 8) | (hi << 16) | (lo << 24))
+    words = num_pixels >> 1
+    for i in range(words):
+        buf32[i] = c32
+    if (num_pixels & 1) != 0:
+        buf8 = ptr8(buf_in)
+        offset = words << 2
+        buf8[offset] = hi
+        buf8[offset + 1] = lo
+
+@micropython.viper
+def _blit_chunk_viper(dst_buf: ptr8, dst_w: int, src_buf: ptr8, src_w: int, dst_x: int, start_y: int, rows: int, dst_h: int, key_hi: int, key_lo: int, use_key: int, force_color: int, force_hi: int, force_lo: int):
+    dst_stride = dst_w << 1
+    src_stride = src_w << 1
+    
+    for ry in range(rows):
+        cur_y = start_y + ry
+        if cur_y >= 0 and cur_y < dst_h:
+            s_off = ry * src_stride
+            d_off = (cur_y * dst_stride) + (dst_x << 1)
+            
+            for x in range(src_w):
+                dx = dst_x + x
+                if dx >= 0 and dx < dst_w:
+                    s = s_off + (x << 1)
+                    hi = src_buf[s]
+                    lo = src_buf[s + 1]
+                    if not (use_key == 1 and hi == key_hi and lo == key_lo):
+                        d = d_off + (x << 1)
+                        if force_color == 1:
+                            dst_buf[d] = force_hi
+                            dst_buf[d + 1] = force_lo
+                        else:
+                            dst_buf[d] = ((lo & 31) << 3) | (hi & 7)
+                            dst_buf[d + 1] = (lo & 224) | ((hi & 248) >> 3)
+
+@micropython.viper
+def _blit_chunk_rot90cw_viper(dst_buf: ptr8, dst_w: int, src_buf: ptr8, src_w: int, chunk_h: int, dst_x: int, dst_y: int, y_start: int, full_h: int, dst_h: int, key_hi: int, key_lo: int, use_key: int, force_color: int, force_hi: int, force_lo: int):
+    # Source chunk is `chunk_h` rows x `src_w` cols, rows y_start..y_start+chunk_h-1 of the
+    # full (unrotated) sprite of height `full_h`. Rotating the WHOLE sprite 90 deg CW maps a
+    # source pixel (sx, sy_full) -> rotated pixel (rx, ry) = (full_h - 1 - sy_full, sx).
+    # So each row of this chunk becomes a COLUMN in the destination, at
+    # column index = full_h - 1 - sy_full, offset from dst_x.
+    dst_stride = dst_w << 1
+    src_stride = src_w << 1
+
+    for ry in range(chunk_h):
+        sy_full = y_start + ry
+        rot_col = full_h - 1 - sy_full   # column in rotated image for this whole source row
+        dx = dst_x + rot_col
+        if dx >= 0 and dx < dst_w:
+            s_off = ry * src_stride
+            d_col_off = dx << 1
+            for x in range(src_w):
+                # source pixel (x, sy_full) -> rotated row index x -> dest y = dst_y + x
+                dy = dst_y + x
+                if dy >= 0 and dy < dst_h:
+                    s = s_off + (x << 1)
+                    hi = src_buf[s]
+                    lo = src_buf[s + 1]
+                    if not (use_key == 1 and hi == key_hi and lo == key_lo):
+                        d = (dy * dst_stride) + d_col_off
+                        if force_color == 1:
+                            dst_buf[d] = force_hi
+                            dst_buf[d + 1] = force_lo
+                        else:
+                            dst_buf[d] = ((lo & 31) << 3) | (hi & 7)
+                            dst_buf[d + 1] = (lo & 224) | ((hi & 248) >> 3)
 
 def blit_file(
     display,
@@ -30,83 +104,68 @@ def blit_file(
     darken=None,
     transparent=False,
     palette=None,
+    rotate90=False,
+    offset_x=0,
+    offset_y=0,
+    force_color=None,   # e.g. 0xFFE0 for yellow, 0x0000 for black, None to disable
 ):
     if transparent and key is None:
         key = 0
+
+    dst_x += offset_x
+    dst_y += offset_y
+
+    has_direct_buf = hasattr(display, "buf") and hasattr(display, "width") and hasattr(display, "height")
 
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
         if len(header) < HEADER_SIZE:
             return
-
         w = header[0] | (header[1] << 8)
         h = header[2] | (header[3] << 8)
-
         if w > MAX_WIDTH:
             return
-
+        
         row_bytes = w * BYTES_PER_PIXEL
-        mv = memoryview(_LINE_BUF)[:row_bytes]
+        mv = memoryview(_CHUNK_BUF)
 
-        for y in range(h):
-            if f.readinto(mv) != row_bytes:
-                break
+        use_key = 1 if key is not None else 0
+        key_hi = (key >> 8) & 0xFF if use_key else 0
+        key_lo = key & 0xFF if use_key else 0
 
-            cur_y = dst_y + y
+        fc = 1 if force_color is not None else 0
+        fc_hi = (force_color >> 8) & 0xFF if fc else 0
+        fc_lo = force_color & 0xFF if fc else 0
 
-            if darken is not None:
-                for i in range(0, row_bytes, 2):
-                    pixel = (_LINE_BUF[i] << 8) | _LINE_BUF[i + 1]
-                    r = int(((pixel >> 11) & 0x1F) * darken)
-                    g = int(((pixel >> 5) & 0x3F) * darken)
-                    b = int((pixel & 0x1F) * darken)
-                    px = (r << 11) | (g << 5) | b
-                    _LINE_BUF[i] = (px >> 8) & 0xFF
-                    _LINE_BUF[i + 1] = px & 0xFF
+        if has_direct_buf:
+            dst_buf = display.buf
+            dst_w = display.width
+            dst_h = display.height
 
-            if palette is not None:
-                for i in range(0, row_bytes, 2):
-                    _LINE_BUF[i] = 0
-                    _LINE_BUF[i + 1] = 0
+            if rotate90:
+                # after a 90deg rotation the sprite's footprint on screen is h wide x w tall
+                if dst_x >= dst_w or dst_x + h <= 0 or dst_y >= dst_h or dst_y + w <= 0:
+                    return
+                for y_start in range(0, h, CHUNK_ROWS):
+                    rows_to_read = min(CHUNK_ROWS, h - y_start)
+                    bytes_to_read = rows_to_read * row_bytes
+                    read_len = f.readinto(mv[:bytes_to_read])
+                    if read_len == 0:
+                        break
+                    _blit_chunk_rot90cw_viper(dst_buf, dst_w, _CHUNK_BUF, w, rows_to_read, dst_x, dst_y, y_start, h, dst_h, key_hi, key_lo, use_key, fc, fc_hi, fc_lo)
+                return
 
-            if key is not None:
-                key_hi = (key >> 8) & 0xFF
-                key_lo = key & 0xFF
-                start_x = None
+            if dst_x >= dst_w or dst_x + w <= 0 or dst_y >= dst_h or dst_y + h <= 0:
+                return
 
-                for x_idx in range(w):
-                    i = x_idx * 2
-                    is_key = _LINE_BUF[i] == key_hi and _LINE_BUF[i + 1] == key_lo
-
-                    if not is_key:
-                        if start_x is None:
-                            start_x = x_idx
-                    else:
-                        if start_x is not None:
-                            run_len = x_idx - start_x
-                            sub_buf = memoryview(_LINE_BUF)[
-                                start_x * 2 : x_idx * 2
-                            ]
-                            sub_fb = framebuf.FrameBuffer(
-                                sub_buf, run_len, 1, framebuf.RGB565
-                            )
-                            display.blit(sub_fb, dst_x + start_x, cur_y)
-                            start_x = None
-
-                if start_x is not None:
-                    run_len = w - start_x
-                    sub_buf = memoryview(_LINE_BUF)[start_x * 2 : row_bytes]
-                    sub_fb = framebuf.FrameBuffer(
-                        sub_buf, run_len, 1, framebuf.RGB565
-                    )
-                    display.blit(sub_fb, dst_x + start_x, cur_y)
-            else:
-                if w == MAX_WIDTH:
-                    display.blit(_LINE_FB, dst_x, cur_y)
-                else:
-                    line_fb = framebuf.FrameBuffer(mv, w, 1, framebuf.RGB565)
-                    display.blit(line_fb, dst_x, cur_y)
-
+            for y_start in range(0, h, CHUNK_ROWS):
+                rows_to_read = min(CHUNK_ROWS, h - y_start)
+                bytes_to_read = rows_to_read * row_bytes
+                read_len = f.readinto(mv[:bytes_to_read])
+                if read_len == 0:
+                    break
+                
+                _blit_chunk_viper(dst_buf, dst_w, _CHUNK_BUF, w, dst_x, dst_y + y_start, rows_to_read, dst_h, key_hi, key_lo, use_key, fc, fc_hi, fc_lo)
 
 def write_file(path, width, height, rgb565_bytes):
     header = bytearray(
@@ -116,9 +175,7 @@ def write_file(path, width, height, rgb565_bytes):
         f.write(header)
         f.write(rgb565_bytes)
 
-
 class IconSet:
-
     def __init__(self, frames, overlay=None, key=None):
         self.frames = frames
         self.overlay = overlay
@@ -133,14 +190,13 @@ class IconSet:
         charging=False,
         transparent=False,
         black_overlay=False,
+        overlay_color=0x0000,  # default black, pass 0xFFE0 for yellow
     ):
         path = self.frames.get(state)
         if not path:
             return
-
         k = 0 if transparent else self.key
         blit_file(display, path, x, y, key=k)
-
         if charging and self.overlay:
             blit_file(
                 display,
@@ -148,5 +204,15 @@ class IconSet:
                 x,
                 y,
                 key=k,
-                palette=True if black_overlay else None,
+                rotate90=True,
+                offset_x=5,
+                offset_y=6,
+                force_color=overlay_color if black_overlay else None,
             )
+
+if __name__ == "__main__":
+    import Clockstar_v2 as cs
+    cs.begin()
+    fast_fill(cs.display.buf, cs.display.width * cs.display.height, 0x0000)
+    blit_file(cs.display, "clock_bg.spr", 0, 0)
+    cs.display.commit()

@@ -1,13 +1,21 @@
 import time
 import json
+import sys
+try:
+    import sprite
+except Exception as e:
+    sys.print_exception(e)
+    print('sprite failed')
+    time.sleep(10)
+    machine.reset()
+    
 from machine import PWM, Pin, freq
 import esp32
-import Clockstar_v2 as cs
 from phone_link import PhoneLink
 import battery
 import pedometer
 import render
-import sprite
+import Clockstar_v2 as cs
 import gc
 
 WIDTH = cs.display.width
@@ -32,12 +40,20 @@ if hasattr(display, "blit"):
         pass
 
 
+ 
 def draw_background():
+    _t0 = time.ticks_ms()
     display.fill(Color.Black)
+    _t1 = time.ticks_ms()
     if HAVE_BG:
         bg_x = (WIDTH - _BG_W) // 2
         bg_y = (HEIGHT - _BG_H) // 2
         sprite.blit_file(display, BG_SPRITE_PATH, bg_x, bg_y)
+    _t2 = time.ticks_ms()
+    print("draw_background: fill=%dms blit=%dms" % (
+        time.ticks_diff(_t1, _t0), time.ticks_diff(_t2, _t1)))
+ 
+
 
 
 BATT_ICONS = sprite.IconSet(
@@ -99,6 +115,7 @@ _synced = False
 
 
 def set_rtc(unix_ts, tz_offset_min):
+    print('?')
     global _synced
     local_ts = unix_ts + tz_offset_min * 60
 
@@ -282,6 +299,10 @@ SCREEN_MEDIA = 1
 SCREEN_PEDOMETER = 2
 SCREEN_NOTIF_LIST = 3
 SCREEN_SETTINGS = 4
+SCREEN_BLE_SCAN = 5
+SCREEN_BLE_CONTROL = 6
+SCREEN_BLE_BLOCKED = 7
+SCREEN_BLE_CMD_PICKER = 8
 _NUM_SCREENS = 4 
 
 _screen = SCREEN_CLOCK
@@ -429,7 +450,6 @@ def draw_sync_lock_screen(full_redraw=True):
     else:
         status = "Waiting" + _SYNC_DOT_FRAMES[_sync_anim_idx]
     display.text(status, (WIDTH - len(status) * 8) // 2, status_y, Color.White)
-    print("bs=", bs, "backlight pin=", cs.backlight.value())
 
 
 def _sync_lock_tick_anim():
@@ -446,10 +466,18 @@ SETTINGS_ROW_VEILLE = 0
 SETTINGS_ROW_TILT_WAKE = 1
 SETTINGS_ROW_GYRO = 2
 SETTINGS_ROW_BATTERY = 3
-_SETTINGS_NUM_ROWS = 4
+SETTINGS_ROW_BLE_TOOLS = 4
+_SETTINGS_NUM_ROWS = 5
 
 _settings_selected_row = 0
-_settings_in_row = False 
+_settings_in_row = False
+
+# BLE tools is a small sub-page with its own 2-entry cursor, navigated the
+# same way as every other in-row screen (UP/DOWN moves, SEL commits).
+_BLE_TOOLS_OPT_SCAN = 0
+_BLE_TOOLS_OPT_CONTROL = 1
+_BLE_TOOLS_OPTIONS = ("Scan devices", "Control mode")
+_ble_tools_selected_idx = 0
 
 # Veille (idle backlight timeout) options, in ms
 VEILLE_OPTIONS_MS = [5000, 10000, 20000, 30000, 60000]
@@ -507,6 +535,8 @@ def _settings_row_label(row):
         return "Debug gyro"
     elif row == SETTINGS_ROW_BATTERY:
         return "Batterie"
+    elif row == SETTINGS_ROW_BLE_TOOLS:
+        return "BLE tools"
     return "?"
 
 
@@ -594,9 +624,21 @@ def draw_settings_screen():
             display.text("battery read error", 4, body_y + 16, Color.White)
         draw_footer_hint("BACK exit")
 
+    elif _settings_selected_row == SETTINGS_ROW_BLE_TOOLS:
+        display.text("BLE TOOLS", 4, body_y, Color.White)
+        opt_y = body_y + 16
+        for i, opt_label in enumerate(_BLE_TOOLS_OPTIONS):
+            if i == _ble_tools_selected_idx:
+                display.fill_rect(2, opt_y - 1, WIDTH - 4, 13, Color.White)
+                display.text(opt_label, 6, opt_y + 1, Color.Black)
+            else:
+                display.text(opt_label, 6, opt_y + 1, Color.White)
+            opt_y += 14
+        draw_footer_hint("SEL open BACK exit")
+
 
 def _settings_on_up():
-    global _settings_selected_row, _veille_idx
+    global _settings_selected_row, _veille_idx, _ble_tools_selected_idx
     if not _settings_in_row:
         _settings_selected_row = (_settings_selected_row - 1) % _SETTINGS_NUM_ROWS
         _mark_dirty()
@@ -604,10 +646,13 @@ def _settings_on_up():
         _veille_idx = (_veille_idx + 1) % len(VEILLE_OPTIONS_MS)
         _save_settings()
         _mark_dirty()
+    elif _settings_selected_row == SETTINGS_ROW_BLE_TOOLS:
+        _ble_tools_selected_idx = (_ble_tools_selected_idx - 1) % len(_BLE_TOOLS_OPTIONS)
+        _mark_dirty()
 
 
 def _settings_on_down():
-    global _settings_selected_row, _veille_idx
+    global _settings_selected_row, _veille_idx, _ble_tools_selected_idx
     if not _settings_in_row:
         _settings_selected_row = (_settings_selected_row + 1) % _SETTINGS_NUM_ROWS
         _mark_dirty()
@@ -615,10 +660,15 @@ def _settings_on_down():
         _veille_idx = (_veille_idx - 1) % len(VEILLE_OPTIONS_MS)
         _save_settings()
         _mark_dirty()
+    elif _settings_selected_row == SETTINGS_ROW_BLE_TOOLS:
+        _ble_tools_selected_idx = (_ble_tools_selected_idx + 1) % len(_BLE_TOOLS_OPTIONS)
+        _mark_dirty()
 
 
 def _settings_on_select():
     global _settings_in_row, _tilt_to_wake_enabled
+    print("DEBUG settings_on_select: in_row=", _settings_in_row,
+          "row=", _settings_selected_row, "ble_idx=", _ble_tools_selected_idx)
     if not _settings_in_row:
         _settings_in_row = True
         _mark_dirty()
@@ -627,6 +677,13 @@ def _settings_on_select():
         _tilt_to_wake_enabled = not _tilt_to_wake_enabled
         _save_settings()
         _mark_dirty()
+    elif _settings_selected_row == SETTINGS_ROW_BLE_TOOLS:
+        if _ble_tools_selected_idx == _BLE_TOOLS_OPT_SCAN:
+            print("DEBUG -> _enter_ble_scan()")
+            _enter_ble_scan()
+        else:
+            print("DEBUG -> _enter_ble_control()")
+            _enter_ble_control()
 
 def _settings_on_back():
     global _settings_in_row
@@ -635,6 +692,332 @@ def _settings_on_back():
         _mark_dirty()
     else:
         _close_settings()
+
+
+# ---------------------------------------------------------------------------
+# BLE tools: scan screen + control-mode screen
+# ---------------------------------------------------------------------------
+# Both entry points are gated behind _ble_connected: the radio is a single
+# shared instance owned by `link` (PhoneLink -> ble_nus.BLEUart), so it
+# cannot scan (central role) while a phone is actively connected
+# (peripheral role) without tearing down that link. Rather than silently
+# disconnecting the phone, we show a blocking screen with an explicit
+# "disconnect first" action -- see SCREEN_BLE_BLOCKED.
+
+BLE_SCAN_DURATION_MS = 6000
+
+_ble_scan_results = []      # list of (label, rssi), refreshed via callback
+_ble_scan_done = False
+_ble_scan_started_at = 0
+_ble_scan_selected_idx = 0
+
+# Commands sent from control mode, over the existing UART TX
+# characteristic to whatever is connected (PC/website via Web Bluetooth).
+# No protocol changes needed -- send_line() already does the right thing.
+BLE_CMD_SOLVE = "solve"
+BLE_CMD_SCRAMBLE = "scramble"
+BLE_CMD_MOVE1 = "move1"
+BLE_CMD_MOVE2 = "move2"
+BLE_CMD_MOVE3 = "move3"
+_BLE_CMD_LIST = (BLE_CMD_SOLVE, BLE_CMD_SCRAMBLE, BLE_CMD_MOVE1, BLE_CMD_MOVE2, BLE_CMD_MOVE3)
+
+_ble_control_last_cmd = ""
+_ble_control_last_cmd_at = 0
+BLE_CONTROL_CMD_FLASH_MS = 1200
+
+_ble_cmd_picker_selected_idx = 0
+
+
+# _ble_return_screen tracks where BACK should take you out of any of the
+# three BLE screens (scan / control / blocked). This is DELIBERATELY kept
+# separate from _prev_screen (which belongs to _open_settings/
+# _close_settings). The two entry points below both set it to
+# SCREEN_SETTINGS -- their only entry path -- and every exit reads from
+# it, never from _prev_screen. Sharing _prev_screen here was the bug that
+# trapped BACK in a SETTINGS<->BLE_SCREEN loop: entering a BLE screen
+# while inside settings overwrote _prev_screen (which was correctly
+# pointing at SCREEN_CLOCK, set when settings was first opened), so
+# closing settings afterwards sent you right back into settings instead
+# of out to the clock.
+_ble_return_screen = SCREEN_SETTINGS
+# Which BLE screen to proceed into once a blocking phone connection drops
+# -- set right before showing SCREEN_BLE_BLOCKED so _ble_blocked_recheck()
+# knows whether to resume into scan or control.
+_ble_blocked_wants_control = False
+
+
+def _ble_scan_on_result(results):
+    global _ble_scan_results
+    _ble_scan_results = results
+    _mark_dirty()
+
+
+def _ble_scan_on_done(results):
+    global _ble_scan_results, _ble_scan_done
+    _ble_scan_results = results
+    _ble_scan_done = True
+    _mark_dirty()
+    gc.collect()
+
+
+def _enter_ble_scan():
+    global _screen, _ble_return_screen, _ble_blocked_wants_control
+    print("DEBUG _enter_ble_scan called, ble_connected=", _ble_connected)
+    _ble_return_screen = SCREEN_SETTINGS
+    if _ble_connected:
+        _ble_blocked_wants_control = False
+        _screen = SCREEN_BLE_BLOCKED
+        _mark_dirty()
+        return
+    _start_ble_scan()
+
+
+def _start_ble_scan():
+    global _screen, _ble_scan_results, _ble_scan_done, _ble_scan_started_at, _ble_scan_selected_idx
+    print("DEBUG _start_ble_scan: entering SCREEN_BLE_SCAN, was screen=", _screen)
+    _screen = SCREEN_BLE_SCAN
+    _ble_scan_results = []
+    _ble_scan_done = False
+    _ble_scan_selected_idx = 0
+    _ble_scan_started_at = time.ticks_ms()
+    link.uart.start_scan(
+        duration_ms=BLE_SCAN_DURATION_MS,
+        on_result=_ble_scan_on_result,
+        on_done=_ble_scan_on_done,
+    )
+    print("DEBUG _start_ble_scan: now screen=", _screen)
+    _mark_dirty()
+
+
+def _exit_ble_scan():
+    global _screen, _ble_scan_results
+    link.uart.stop_scan()
+    _ble_scan_results = []
+    _screen = _ble_return_screen
+    _mark_dirty()
+    gc.collect()
+
+
+def _enter_ble_control():
+    global _screen, _ble_return_screen, _ble_blocked_wants_control
+    print("DEBUG _enter_ble_control called, ble_connected=", _ble_connected)
+    _ble_return_screen = SCREEN_SETTINGS
+    if _ble_connected:
+        _ble_blocked_wants_control = True
+        _screen = SCREEN_BLE_BLOCKED
+        _mark_dirty()
+        return
+    _screen = SCREEN_BLE_CONTROL
+    print("DEBUG _enter_ble_control: now screen=", _screen)
+    _mark_dirty()
+
+
+def _exit_ble_control():
+    global _screen
+    _screen = _ble_return_screen
+    _mark_dirty()
+
+
+def _enter_ble_cmd_picker():
+    global _screen, _ble_cmd_picker_selected_idx
+    _ble_cmd_picker_selected_idx = 0
+    _screen = SCREEN_BLE_CMD_PICKER
+    _mark_dirty()
+
+
+def _exit_ble_cmd_picker():
+    global _screen
+    _screen = SCREEN_BLE_CONTROL
+    _mark_dirty()
+
+
+def _ble_cmd_picker_on_up():
+    global _ble_cmd_picker_selected_idx
+    _ble_cmd_picker_selected_idx = (_ble_cmd_picker_selected_idx - 1) % len(_BLE_CMD_LIST)
+    _mark_dirty()
+
+
+def _ble_cmd_picker_on_down():
+    global _ble_cmd_picker_selected_idx
+    _ble_cmd_picker_selected_idx = (_ble_cmd_picker_selected_idx + 1) % len(_BLE_CMD_LIST)
+    _mark_dirty()
+
+
+def _ble_cmd_picker_confirm():
+    cmd = _BLE_CMD_LIST[_ble_cmd_picker_selected_idx]
+    _ble_control_send(cmd)
+    _exit_ble_cmd_picker()
+
+
+def _ble_control_send(cmd):
+    global _ble_control_last_cmd, _ble_control_last_cmd_at
+    link.uart.send_line(cmd)
+    _ble_control_last_cmd = cmd
+    _ble_control_last_cmd_at = time.ticks_ms()
+    _mark_dirty()
+
+
+def _ble_blocked_disconnect():
+    link.disconnect()
+    # on_ble_disconnect() fires from the BLE IRQ->poll path shortly after
+    # this and flips _ble_connected on its own, but we don't want the user
+    # stuck staring at "please disconnect" until they press something
+    # again -- main_loop() polls _ble_blocked_recheck() each tick while
+    # this screen is up so it moves on automatically once the phone link
+    # actually drops.
+    _mark_dirty()
+
+
+def _ble_blocked_recheck():
+    """Called every main_loop() tick while SCREEN_BLE_BLOCKED is showing.
+    Once the phone has actually disconnected, proceed into whichever BLE
+    screen the user originally asked for."""
+    if _screen != SCREEN_BLE_BLOCKED or _ble_connected:
+        return
+    if _ble_blocked_wants_control:
+        _enter_ble_control()
+    else:
+        _enter_ble_scan()
+
+
+def draw_ble_blocked_screen():
+    display.fill(Color.Black)
+    header_h = draw_header("BLE TOOLS", badge=False)
+
+    lines = ["Phone is connected.", "Please disconnect", "the phone first."]
+    y = header_h + 14
+    for line in lines:
+        display.text(line, (WIDTH - len(line) * 8) // 2, y, Color.White)
+        y += 12
+
+    btn_label = "[SEL] Disconnect"
+    btn_y = y + 14
+    display.text(btn_label, (WIDTH - len(btn_label) * 8) // 2, btn_y, Color.White)
+
+    draw_footer_hint("BACK cancel")
+
+
+RSSI_MIN = -100
+RSSI_MAX = -40
+
+
+def _rssi_bar_frac(rssi):
+    frac = (rssi - RSSI_MIN) / (RSSI_MAX - RSSI_MIN)
+    if frac < 0.0:
+        frac = 0.0
+    if frac > 1.0:
+        frac = 1.0
+    return frac
+
+
+def draw_ble_scan_screen():
+    display.fill(Color.Black)
+    count = len(_ble_scan_results)
+    title = "SCANNING" if not _ble_scan_done else "FOUND (%d)" % count
+    header_h = draw_header(title, badge=False)
+
+    row_h = 14
+    y = header_h + 4
+    max_rows = (HEIGHT - header_h - 4 - 12) // row_h
+
+    if not _ble_scan_results:
+        msg = "Scanning..." if not _ble_scan_done else "No devices found"
+        display.text(msg, (WIDTH - len(msg) * 8) // 2, HEIGHT // 2 - 4, Color.White)
+    else:
+        name_max_chars = (WIDTH - 8 - 34) // 8
+        for i, (label, rssi) in enumerate(_ble_scan_results[:max_rows]):
+            row_label = _truncate(label, name_max_chars)
+            selected = _ble_scan_done and i == _ble_scan_selected_idx
+            if selected:
+                display.fill_rect(2, y - 1, WIDTH - 4, row_h - 1, Color.White)
+                text_color = Color.Black
+            else:
+                text_color = Color.White
+            display.text(row_label, 4, y, text_color)
+            bar_x = WIDTH - 34
+            bar_w = 28
+            draw_progress_bar(bar_x, y + 1, bar_w, 6, _rssi_bar_frac(rssi), color=text_color)
+            y += row_h
+
+    if not _ble_scan_done:
+        elapsed = time.ticks_diff(time.ticks_ms(), _ble_scan_started_at)
+        remaining_s = max(0, (BLE_SCAN_DURATION_MS - elapsed) // 1000 + 1)
+        draw_footer_hint("BACK cancel (%ds)" % remaining_s)
+    else:
+        draw_footer_hint("UP/DN sel BACK exit")
+
+
+def _ble_scan_on_up():
+    global _ble_scan_selected_idx
+    if not _ble_scan_done or not _ble_scan_results:
+        return
+    _ble_scan_selected_idx = (_ble_scan_selected_idx - 1) % len(_ble_scan_results)
+    _mark_dirty()
+
+
+def _ble_scan_on_down():
+    global _ble_scan_selected_idx
+    if not _ble_scan_done or not _ble_scan_results:
+        return
+    _ble_scan_selected_idx = (_ble_scan_selected_idx + 1) % len(_ble_scan_results)
+    _mark_dirty()
+
+
+def draw_ble_control_screen():
+    # Deliberately mirrors draw_clock_screen()'s layout (time + date,
+    # connection badge) since this replaces the normal clock face while
+    # in control mode -- same background/positions, just no notif/media/
+    # pedometer cycling and UP opens the command picker instead.
+    draw_background()
+    draw_connection_badge()
+
+    h, m, _s = get_local_time()
+    time_str = "{:02d}:{:02d}".format(h, m)
+    text_x = (WIDTH - len(time_str) * 16) // 2
+    text_y = HEIGHT // 2 - 16
+    _text_2x(time_str, text_x, text_y, Color.White)
+
+    divider_y = text_y + 24
+    divider_w = 40
+    display.fill_rect((WIDTH - divider_w) // 2, divider_y, divider_w, 1, Color.White)
+
+    year, month, day = get_local_date()
+    if year is not None:
+        date_str = "{:02d}/{:02d}/{:04d}".format(day, month, year)
+        date_x = (WIDTH - len(date_str) * 8) // 2
+        date_y = divider_y + 8
+        display.text(date_str, date_x, date_y, Color.White)
+
+    if _ble_control_last_cmd and time.ticks_diff(time.ticks_ms(), _ble_control_last_cmd_at) < BLE_CONTROL_CMD_FLASH_MS:
+        sent_str = "Sent: %s" % _ble_control_last_cmd
+        display.text(sent_str, (WIDTH - len(sent_str) * 8) // 2, date_y + 14 if year is not None else divider_y + 8, Color.White)
+
+    draw_footer_hint("UP:commands BACK exit")
+
+
+def draw_ble_cmd_picker_screen():
+    display.fill(Color.Black)
+    header_h = draw_header("SEND COMMAND", badge=False)
+
+    row_h = 16
+    y = header_h + 6
+    for i, cmd in enumerate(_BLE_CMD_LIST):
+        if i == _ble_cmd_picker_selected_idx:
+            display.fill_rect(2, y - 2, WIDTH - 4, row_h - 2, Color.White)
+            display.text(cmd, 6, y + 1, Color.Black)
+        else:
+            display.text(cmd, 6, y + 1, Color.White)
+        y += row_h
+
+    draw_footer_hint("SEL send BACK cancel")
+
+
+def main_loop_ble_control_flash_tick():
+    # Called from main_loop() so the "Sent: solve" confirmation clears
+    # itself even with no further button presses.
+    if _screen == SCREEN_BLE_CONTROL and _ble_control_last_cmd:
+        if time.ticks_diff(time.ticks_ms(), _ble_control_last_cmd_at) >= BLE_CONTROL_CMD_FLASH_MS:
+            _mark_dirty()
 
 
 # ---------------------------------------------------------------------------
@@ -650,6 +1033,17 @@ def _on_up_press():
         return
     if _screen == SCREEN_SETTINGS:
         _settings_on_up()
+        return
+    if _screen == SCREEN_BLE_SCAN:
+        _ble_scan_on_up()
+        return
+    if _screen == SCREEN_BLE_CONTROL:
+        _enter_ble_cmd_picker()
+        return
+    if _screen == SCREEN_BLE_CMD_PICKER:
+        _ble_cmd_picker_on_up()
+        return
+    if _screen == SCREEN_BLE_BLOCKED:
         return
     if _screen == SCREEN_NOTIF_LIST and _notif_nav_mode:
         if _notifications:
@@ -674,6 +1068,16 @@ def _on_down_press():
     if _screen == SCREEN_SETTINGS:
         _settings_on_down()
         return
+    if _screen == SCREEN_BLE_SCAN:
+        _ble_scan_on_down()
+        return
+    if _screen == SCREEN_BLE_CONTROL:
+        return
+    if _screen == SCREEN_BLE_CMD_PICKER:
+        _ble_cmd_picker_on_down()
+        return
+    if _screen == SCREEN_BLE_BLOCKED:
+        return
     if _screen == SCREEN_NOTIF_LIST and _notif_nav_mode:
         if _notifications:
             _selected_notif_idx = (_selected_notif_idx + 1) % len(_notifications)
@@ -696,6 +1100,19 @@ def _on_back_press():
         return
     if _screen == SCREEN_SETTINGS:
         _settings_on_back()
+        return
+    if _screen == SCREEN_BLE_SCAN:
+        _exit_ble_scan()
+        return
+    if _screen == SCREEN_BLE_CONTROL:
+        _exit_ble_control()
+        return
+    if _screen == SCREEN_BLE_CMD_PICKER:
+        _exit_ble_cmd_picker()
+        return
+    if _screen == SCREEN_BLE_BLOCKED:
+        _screen = _ble_return_screen
+        _mark_dirty()
         return
     if _screen == SCREEN_MEDIA:
         if _media_control_mode:
@@ -751,6 +1168,16 @@ def _do_select_short_action():
         return
     if _screen == SCREEN_SETTINGS:
         _settings_on_select()
+        return
+    if _screen == SCREEN_BLE_SCAN:
+        return
+    if _screen == SCREEN_BLE_CONTROL:
+        return
+    if _screen == SCREEN_BLE_CMD_PICKER:
+        _ble_cmd_picker_confirm()
+        return
+    if _screen == SCREEN_BLE_BLOCKED:
+        _ble_blocked_disconnect()
         return
     if _screen == SCREEN_MEDIA:
         if not _media_control_mode:
@@ -871,7 +1298,7 @@ def _draw_battery_icon_fallback(x, y, invert=False):
 
 def draw_battery_icon(x, y, invert=False):
     if HAVE_BATT_ICONS:
-        BATT_ICONS.draw(display, _batt_level, x - 5, y - 5, charging=_charging, transparent=True)
+        BATT_ICONS.draw(display, _batt_level, x - 5, y - 5, charging=_charging, transparent=True, black_overlay=True, overlay_color=0xFFE0)
     else:
         _draw_battery_icon_fallback(x, y, invert=invert)
 
@@ -1146,15 +1573,20 @@ def _log_battery_info():
         print("battery log write error:", e)
 
 
-def draw_frame():
-    if _screen == SCREEN_SYNC_LOCK:
-        # Only the very first draw after entering this screen needs the
-        # full repaint (icon, text, layout). Subsequent dirty marks purely
-        # from the dot animation timer only need the status line touched.
-        draw_sync_lock_screen(full_redraw=not _sync_screen_battery_drawn)
-        display.commit()
-        return
 
+def draw_frame():
+    _f0 = time.ticks_ms()
+ 
+    if _screen == SCREEN_SYNC_LOCK:
+        draw_sync_lock_screen(full_redraw=not _sync_screen_battery_drawn)
+        _fc0 = time.ticks_ms()
+        display.commit()
+        _fc1 = time.ticks_ms()
+        print("draw_frame(SYNC_LOCK): commit=%dms TOTAL=%dms" % (
+            time.ticks_diff(_fc1, _fc0), time.ticks_diff(_fc1, _f0)))
+        return
+ 
+    _f1 = time.ticks_ms()
     if _screen == SCREEN_CLOCK:
         draw_clock_screen()
     elif _screen == SCREEN_MEDIA:
@@ -1165,11 +1597,32 @@ def draw_frame():
         draw_notif_list_screen()
     elif _screen == SCREEN_SETTINGS:
         draw_settings_screen()
-
+    elif _screen == SCREEN_BLE_SCAN:
+        draw_ble_scan_screen()
+    elif _screen == SCREEN_BLE_CONTROL:
+        draw_ble_control_screen()
+    elif _screen == SCREEN_BLE_CMD_PICKER:
+        draw_ble_cmd_picker_screen()
+    elif _screen == SCREEN_BLE_BLOCKED:
+        draw_ble_blocked_screen()
+    _f2 = time.ticks_ms()
+ 
     if _slide_active and _screen != SCREEN_SETTINGS:
         draw_slide_overlay()
-
+    _f3 = time.ticks_ms()
+ 
     display.commit()
+    _f4 = time.ticks_ms()
+ 
+    print("draw_frame(screen=%d): draw=%dms overlay=%dms commit=%dms TOTAL=%dms" % (
+        _screen,
+        time.ticks_diff(_f2, _f1),
+        time.ticks_diff(_f3, _f2),
+        time.ticks_diff(_f4, _f3),
+        time.ticks_diff(_f4, _f0),
+    ))
+ 
+
 
 
 bs = False
@@ -1177,7 +1630,7 @@ last_activity = 0
 
 FREQ_ACTIVE_HZ = 240_000_000
 FREQ_IDLE_DISCONNECTED_HZ = 20_000_000
-FREQ_IDLE_CONNECTED_HZ = 60_000_000
+FREQ_IDLE_CONNECTED_HZ = 80_000_000
 
 
 def backlightO():
@@ -1237,6 +1690,9 @@ def _update_active_ui(now, last_sync_anim, last_pedometer_steps):
 
     if _screen == SCREEN_SETTINGS and _settings_selected_row == SETTINGS_ROW_GYRO and _settings_in_row:
         _mark_dirty()
+
+    main_loop_ble_control_flash_tick()
+    _ble_blocked_recheck()
 
     return last_sync_anim, last_pedometer_steps
 
