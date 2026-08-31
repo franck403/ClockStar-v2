@@ -5,7 +5,7 @@ import machine
 HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
 MAX_WIDTH = 128
-CHUNK_ROWS = 16
+CHUNK_ROWS = 8
 try:
     _CHUNK_BUF = bytearray(MAX_WIDTH * BYTES_PER_PIXEL * CHUNK_ROWS)
 except:
