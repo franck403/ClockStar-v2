@@ -1,17 +1,41 @@
 import framebuf
 import micropython
 import machine
+import gc
 
 HEADER_SIZE = 4
 BYTES_PER_PIXEL = 2
 MAX_WIDTH = 128
-CHUNK_ROWS = 8
-try:
-    _CHUNK_BUF = bytearray(MAX_WIDTH * BYTES_PER_PIXEL * CHUNK_ROWS)
-except:
-    print('not enough ram')
-    machine.reset()
-    
+# Reduced from 8 to 2 rows: 128*2*8 = 2048B contiguous was failing to
+# allocate on a fragmented heap right after boot (see MemoryError on
+# `import sprite`, 936B alloc failing despite ~260KB "free" reported by
+# idf_heap_info -- that free memory was in a different region /
+# non-contiguous chunks, not usable for one bytearray). 128*2*2 = 512B
+# is small enough to fit in the fragmented gaps we actually see at boot.
+CHUNK_ROWS = 2
+
+# Lazily allocated instead of at import time. Importing this module no
+# longer allocates a large contiguous buffer itself -- the caller (or
+# first use of blit_file) triggers allocation, by which point cs.begin()
+# and earlier gc.collect() calls have had a chance to compact the heap.
+_CHUNK_BUF = None
+
+
+def _ensure_chunk_buf():
+    global _CHUNK_BUF
+    if _CHUNK_BUF is None:
+        gc.collect()
+        try:
+            _CHUNK_BUF = bytearray(MAX_WIDTH * BYTES_PER_PIXEL * CHUNK_ROWS)
+        except MemoryError:
+            # Retry once after a hard collect; if it still fails, let the
+            # caller see the MemoryError rather than silently rebooting
+            # from inside a library import.
+            gc.collect()
+            _CHUNK_BUF = bytearray(MAX_WIDTH * BYTES_PER_PIXEL * CHUNK_ROWS)
+    return _CHUNK_BUF
+
+
 def peek_size(path):
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
@@ -117,6 +141,8 @@ def blit_file(
 
     has_direct_buf = hasattr(display, "buf") and hasattr(display, "width") and hasattr(display, "height")
 
+    chunk_buf = _ensure_chunk_buf()
+
     with open(path, "rb") as f:
         header = f.read(HEADER_SIZE)
         if len(header) < HEADER_SIZE:
@@ -127,7 +153,7 @@ def blit_file(
             return
         
         row_bytes = w * BYTES_PER_PIXEL
-        mv = memoryview(_CHUNK_BUF)
+        mv = memoryview(chunk_buf)
 
         use_key = 1 if key is not None else 0
         key_hi = (key >> 8) & 0xFF if use_key else 0
@@ -152,7 +178,7 @@ def blit_file(
                     read_len = f.readinto(mv[:bytes_to_read])
                     if read_len == 0:
                         break
-                    _blit_chunk_rot90cw_viper(dst_buf, dst_w, _CHUNK_BUF, w, rows_to_read, dst_x, dst_y, y_start, h, dst_h, key_hi, key_lo, use_key, fc, fc_hi, fc_lo)
+                    _blit_chunk_rot90cw_viper(dst_buf, dst_w, chunk_buf, w, rows_to_read, dst_x, dst_y, y_start, h, dst_h, key_hi, key_lo, use_key, fc, fc_hi, fc_lo)
                 return
 
             if dst_x >= dst_w or dst_x + w <= 0 or dst_y >= dst_h or dst_y + h <= 0:
@@ -165,7 +191,7 @@ def blit_file(
                 if read_len == 0:
                     break
                 
-                _blit_chunk_viper(dst_buf, dst_w, _CHUNK_BUF, w, dst_x, dst_y + y_start, rows_to_read, dst_h, key_hi, key_lo, use_key, fc, fc_hi, fc_lo)
+                _blit_chunk_viper(dst_buf, dst_w, chunk_buf, w, dst_x, dst_y + y_start, rows_to_read, dst_h, key_hi, key_lo, use_key, fc, fc_hi, fc_lo)
 
 def write_file(path, width, height, rgb565_bytes):
     header = bytearray(
