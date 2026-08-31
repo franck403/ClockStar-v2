@@ -332,24 +332,33 @@ SCREEN_CLOCK = 0
 SCREEN_MEDIA = 1
 SCREEN_PEDOMETER = 2
 SCREEN_NOTIF_LIST = 3
-SCREEN_SETTINGS = 4
-SCREEN_BLE_SCAN = 5
-SCREEN_BLE_CONTROL = 6
+SCREEN_BLE_CONTROL = 4
+SCREEN_SETTINGS = 5
+SCREEN_BLE_SCAN = 6
 SCREEN_BLE_BLOCKED = 7
-SCREEN_BLE_CMD_PICKER = 8
-_NUM_SCREENS = 4 
+# SCREEN_BLE_CONTROL now lives in the normal UP/DOWN screen cycle
+# alongside clock/media/pedometer/notifs (see _NUM_SCREENS below), rather
+# than being reachable only through Settings -> BLE tools -> Control
+# mode. It behaves like SCREEN_MEDIA/SCREEN_NOTIF_LIST: SELECT toggles a
+# "nav mode" where UP/DOWN scroll the command list instead of cycling
+# screens, SELECT sends the highlighted command, and BACK backs out of
+# nav mode first before returning to the clock. The old dedicated
+# SCREEN_BLE_CMD_PICKER sub-screen is gone -- the picker IS the control
+# screen now, same as the notif list doesn't have a separate "viewer"
+# screen.
+_NUM_SCREENS = 5 
 
 _screen = SCREEN_CLOCK
 _prev_screen = SCREEN_CLOCK  
 _dirty = True
 _notif_nav_mode = False
 _media_control_mode = False
-# _BLE_NAV gates the BLE command picker's own UP/DOWN cursor movement.
-# It's True exactly while SCREEN_BLE_CMD_PICKER is the active screen and
-# False otherwise -- set in _enter_ble_cmd_picker()/_exit_ble_cmd_picker()
-# below, mirroring how _notif_nav_mode/_media_control_mode gate their own
-# screens' UP/DOWN behaviour elsewhere in this file.
-_BLE_NAV = False
+# _ble_control_nav_mode gates SCREEN_BLE_CONTROL's own UP/DOWN command
+# cursor, exactly like _notif_nav_mode/_media_control_mode gate their
+# screens. True while browsing/sending commands, False while just
+# glancing at the control screen (BLE status + time) as it cycles past
+# in the main screen rotation.
+_ble_control_nav_mode = False
 
 
 def _mark_dirty():
@@ -512,11 +521,14 @@ _SETTINGS_NUM_ROWS = 5
 _settings_selected_row = 0
 _settings_in_row = False
 
-# BLE tools is a small sub-page with its own 2-entry cursor, navigated the
-# same way as every other in-row screen (UP/DOWN moves, SEL commits).
+# BLE tools is a small sub-page navigated the same way as every other
+# in-row screen (UP/DOWN moves, SEL commits). "Control mode" used to live
+# here as a second option, but it's now a normal screen in the main
+# UP/DOWN cycle (SCREEN_BLE_CONTROL, alongside clock/media/notifs) rather
+# than something you launch from Settings, so this sub-page only offers
+# Scan devices now.
 _BLE_TOOLS_OPT_SCAN = 0
-_BLE_TOOLS_OPT_CONTROL = 1
-_BLE_TOOLS_OPTIONS = ("Scan devices", "Control mode")
+_BLE_TOOLS_OPTIONS = ("Scan devices",)
 _ble_tools_selected_idx = 0
 
 # Veille (idle backlight timeout) options, in ms
@@ -718,12 +730,8 @@ def _settings_on_select():
         _save_settings()
         _mark_dirty()
     elif _settings_selected_row == SETTINGS_ROW_BLE_TOOLS:
-        if _ble_tools_selected_idx == _BLE_TOOLS_OPT_SCAN:
-            print("DEBUG -> _enter_ble_scan()")
-            _enter_ble_scan()
-        else:
-            print("DEBUG -> _enter_ble_control()")
-            _enter_ble_control()
+        print("DEBUG -> _enter_ble_scan()")
+        _enter_ble_scan()
 
 def _settings_on_back():
     global _settings_in_row
@@ -765,25 +773,21 @@ _ble_control_last_cmd = ""
 _ble_control_last_cmd_at = 0
 BLE_CONTROL_CMD_FLASH_MS = 1200
 
-_ble_cmd_picker_selected_idx = 0
+_ble_control_selected_idx = 0
 
 
-# _ble_return_screen tracks where BACK should take you out of any of the
-# three BLE screens (scan / control / blocked). This is DELIBERATELY kept
-# separate from _prev_screen (which belongs to _open_settings/
-# _close_settings). The two entry points below both set it to
-# SCREEN_SETTINGS -- their only entry path -- and every exit reads from
-# it, never from _prev_screen. Sharing _prev_screen here was the bug that
-# trapped BACK in a SETTINGS<->BLE_SCREEN loop: entering a BLE screen
-# while inside settings overwrote _prev_screen (which was correctly
-# pointing at SCREEN_CLOCK, set when settings was first opened), so
-# closing settings afterwards sent you right back into settings instead
-# of out to the clock.
+# _ble_return_screen tracks where BACK should take you out of the BLE
+# scan screen specifically. Scan is still the one BLE flow that needs a
+# central/peripheral role handoff (it can't run while a phone is
+# connected -- see SCREEN_BLE_BLOCKED below), so it keeps this dedicated
+# "where did I come from" tracking, DELIBERATELY separate from
+# _prev_screen (which belongs to _open_settings/_close_settings). Sharing
+# _prev_screen here was the bug that trapped BACK in a
+# SETTINGS<->BLE_SCREEN loop; see the (now-removed) note history in this
+# file's memory notes for the original bug. SCREEN_BLE_CONTROL no longer
+# needs any of this -- it lives in the main screen cycle and just uses
+# the existing peripheral UART link like every other screen.
 _ble_return_screen = SCREEN_SETTINGS
-# Which BLE screen to proceed into once a blocking phone connection drops
-# -- set right before showing SCREEN_BLE_BLOCKED so _ble_blocked_recheck()
-# knows whether to resume into scan or control.
-_ble_blocked_wants_control = False
 
 
 def _ble_scan_on_result(results):
@@ -801,11 +805,10 @@ def _ble_scan_on_done(results):
 
 
 def _enter_ble_scan():
-    global _screen, _ble_return_screen, _ble_blocked_wants_control
+    global _screen, _ble_return_screen
     print("DEBUG _enter_ble_scan called, ble_connected=", _ble_connected)
     _ble_return_screen = SCREEN_SETTINGS
     if _ble_connected:
-        _ble_blocked_wants_control = False
         _screen = SCREEN_BLE_BLOCKED
         _mark_dirty()
         return
@@ -838,63 +841,6 @@ def _exit_ble_scan():
     gc.collect()
 
 
-def _enter_ble_control():
-    global _screen, _ble_return_screen, _ble_blocked_wants_control
-    print("DEBUG _enter_ble_control called, ble_connected=", _ble_connected)
-    _ble_return_screen = SCREEN_SETTINGS
-    if _ble_connected:
-        _ble_blocked_wants_control = True
-        _screen = SCREEN_BLE_BLOCKED
-        _mark_dirty()
-        return
-    _screen = SCREEN_BLE_CONTROL
-    print("DEBUG _enter_ble_control: now screen=", _screen)
-    _mark_dirty()
-
-
-def _exit_ble_control():
-    global _screen
-    _screen = _ble_return_screen
-    _mark_dirty()
-
-
-def _enter_ble_cmd_picker():
-    # Entered from SCREEN_BLE_CONTROL via UP (see _on_up_press). Sets
-    # _BLE_NAV True so this sub-screen's own UP/DOWN handlers
-    # (_ble_cmd_picker_on_up/_down) take over the cursor -- mirrors
-    # _notif_nav_mode/_media_control_mode gating their screens elsewhere.
-    global _screen, _ble_cmd_picker_selected_idx, _BLE_NAV
-    _ble_cmd_picker_selected_idx = 0
-    _BLE_NAV = True
-    _screen = SCREEN_BLE_CMD_PICKER
-    _mark_dirty()
-
-
-def _exit_ble_cmd_picker():
-    global _screen, _BLE_NAV
-    _BLE_NAV = False
-    _screen = SCREEN_BLE_CONTROL
-    _mark_dirty()
-
-
-def _ble_cmd_picker_on_up():
-    global _ble_cmd_picker_selected_idx
-    _ble_cmd_picker_selected_idx = (_ble_cmd_picker_selected_idx - 1) % len(_BLE_CMD_LIST)
-    _mark_dirty()
-
-
-def _ble_cmd_picker_on_down():
-    global _ble_cmd_picker_selected_idx
-    _ble_cmd_picker_selected_idx = (_ble_cmd_picker_selected_idx + 1) % len(_BLE_CMD_LIST)
-    _mark_dirty()
-
-
-def _ble_cmd_picker_confirm():
-    cmd = _BLE_CMD_LIST[_ble_cmd_picker_selected_idx]
-    _ble_control_send(cmd)
-    _exit_ble_cmd_picker()
-
-
 def _ble_control_send(cmd):
     global _ble_control_last_cmd, _ble_control_last_cmd_at
     link.uart.send_line(cmd)
@@ -916,14 +862,12 @@ def _ble_blocked_disconnect():
 
 def _ble_blocked_recheck():
     """Called every main_loop() tick while SCREEN_BLE_BLOCKED is showing.
-    Once the phone has actually disconnected, proceed into whichever BLE
-    screen the user originally asked for."""
+    Once the phone has actually disconnected, resume the scan the user
+    originally asked for (the only flow that still routes through this
+    screen -- see the note above _ble_return_screen)."""
     if _screen != SCREEN_BLE_BLOCKED or _ble_connected:
         return
-    if _ble_blocked_wants_control:
-        _enter_ble_control()
-    else:
-        _enter_ble_scan()
+    _enter_ble_scan()
 
 
 def draw_ble_blocked_screen():
@@ -1010,13 +954,16 @@ def _ble_scan_on_down():
 
 
 def draw_ble_control_screen():
-    # Deliberately mirrors draw_clock_screen()'s layout (time + date,
-    # connection badge) since this replaces the normal clock face while
-    # in control mode -- same text positions, just drawn over
-    # draw_background_alternative() instead of the normal clock_bg.spr
-    # background, so control mode is visually distinct from the plain
-    # clock face at a glance. No notif/media/pedometer cycling here; UP
-    # opens the command picker instead (see _on_up_press).
+    # Browse view: mirrors draw_clock_screen()'s layout (time + date,
+    # connection badge) since this sits in the same screen rotation --
+    # drawn over draw_background_alternative() instead of clock_bg.spr so
+    # it's visually distinct at a glance while just cycling past. Nav
+    # mode (SEL to enter, like SCREEN_NOTIF_LIST/SCREEN_MEDIA) replaces
+    # this with the scrollable command list below.
+    if _ble_control_nav_mode:
+        draw_ble_command_list()
+        return
+
     draw_background_alternative()
     draw_connection_badge()
 
@@ -1041,24 +988,33 @@ def draw_ble_control_screen():
         sent_str = "Sent: %s" % _ble_control_last_cmd
         display.text(sent_str, (WIDTH - len(sent_str) * 8) // 2, date_y + 14 if year is not None else divider_y + 8, Color.White)
 
-    draw_footer_hint("UP commands BACK exit")
+    draw_footer_hint("SEL commands")
 
 
-def draw_ble_cmd_picker_screen():
+def draw_ble_command_list():
+    # Nav-mode view of SCREEN_BLE_CONTROL: a scrollable command list,
+    # entered/exited exactly like SCREEN_NOTIF_LIST's browse mode -- SEL
+    # toggles in, UP/DOWN move the highlighted row, SEL sends the
+    # highlighted command, BACK backs out to the browse view above rather
+    # than leaving the screen entirely.
     display.fill(Color.Black)
-    header_h = draw_header("SEND COMMAND", badge=False)
+    header_h = draw_header("BLE COMMANDS", badge=False)
 
     row_h = 16
     y = header_h + 6
     for i, cmd in enumerate(_BLE_CMD_LIST):
-        if i == _ble_cmd_picker_selected_idx:
+        if i == _ble_control_selected_idx:
             display.fill_rect(2, y - 2, WIDTH - 4, row_h - 2, Color.White)
             display.text(cmd, 6, y + 1, Color.Black)
         else:
             display.text(cmd, 6, y + 1, Color.White)
         y += row_h
 
-    draw_footer_hint("SEL send BACK cancel")
+    if _ble_control_last_cmd and time.ticks_diff(time.ticks_ms(), _ble_control_last_cmd_at) < BLE_CONTROL_CMD_FLASH_MS:
+        sent_str = "Sent: %s" % _ble_control_last_cmd
+        display.text(sent_str, (WIDTH - len(sent_str) * 8) // 2, HEIGHT - 24, Color.White)
+
+    draw_footer_hint("UP/DN sel SEL send BACK back")
 
 
 def main_loop_ble_control_flash_tick():
@@ -1074,7 +1030,7 @@ def main_loop_ble_control_flash_tick():
 # ---------------------------------------------------------------------------
 
 def _on_up_press():
-    global _screen, _selected_notif_idx, _BLE_NAV
+    global _screen, _selected_notif_idx, _ble_control_selected_idx
     if bs:
         backlightO()
         return
@@ -1086,13 +1042,11 @@ def _on_up_press():
     if _screen == SCREEN_BLE_SCAN:
         _ble_scan_on_up()
         return
-    if _screen == SCREEN_BLE_CONTROL:
-        _enter_ble_cmd_picker()
-        return
-    if _screen == SCREEN_BLE_CMD_PICKER and _BLE_NAV:
-        _ble_cmd_picker_on_up()
-        return
     if _screen == SCREEN_BLE_BLOCKED:
+        return
+    if _screen == SCREEN_BLE_CONTROL and _ble_control_nav_mode:
+        _ble_control_selected_idx = (_ble_control_selected_idx - 1) % len(_BLE_CMD_LIST)
+        _mark_dirty()
         return
     if _screen == SCREEN_NOTIF_LIST and _notif_nav_mode:
         if _notifications:
@@ -1108,7 +1062,7 @@ def _on_up_press():
 
 
 def _on_down_press():
-    global _screen, _selected_notif_idx, _BLE_NAV
+    global _screen, _selected_notif_idx, _ble_control_selected_idx
     if bs:
         backlightO()
         return
@@ -1120,13 +1074,11 @@ def _on_down_press():
     if _screen == SCREEN_BLE_SCAN:
         _ble_scan_on_down()
         return
-    if _screen == SCREEN_BLE_CMD_PICKER and _BLE_NAV:
-        _ble_cmd_picker_on_down()
-        return
-    if _screen == SCREEN_BLE_CONTROL:
-        _exit_ble_cmd_picker()
-        return
     if _screen == SCREEN_BLE_BLOCKED:
+        return
+    if _screen == SCREEN_BLE_CONTROL and _ble_control_nav_mode:
+        _ble_control_selected_idx = (_ble_control_selected_idx + 1) % len(_BLE_CMD_LIST)
+        _mark_dirty()
         return
     if _screen == SCREEN_NOTIF_LIST and _notif_nav_mode:
         if _notifications:
@@ -1142,7 +1094,7 @@ def _on_down_press():
 
 
 def _on_back_press():
-    global _screen, _notif_nav_mode, _media_control_mode
+    global _screen, _notif_nav_mode, _media_control_mode, _ble_control_nav_mode
     if bs:
         backlightO()
         return
@@ -1153,12 +1105,6 @@ def _on_back_press():
         return
     if _screen == SCREEN_BLE_SCAN:
         _exit_ble_scan()
-        return
-    if _screen == SCREEN_BLE_CONTROL:
-        _exit_ble_control()
-        return
-    if _screen == SCREEN_BLE_CMD_PICKER:
-        _exit_ble_cmd_picker()
         return
     if _screen == SCREEN_BLE_BLOCKED:
         _screen = _ble_return_screen
@@ -1172,6 +1118,13 @@ def _on_back_press():
     elif _screen == SCREEN_NOTIF_LIST:
         if _notif_nav_mode:
             _notif_nav_mode = False
+            _mark_dirty()
+        else:
+            _screen = SCREEN_CLOCK
+            _mark_dirty()
+    elif _screen == SCREEN_BLE_CONTROL:
+        if _ble_control_nav_mode:
+            _ble_control_nav_mode = False
             _mark_dirty()
         else:
             _screen = SCREEN_CLOCK
@@ -1213,7 +1166,7 @@ def _on_select_release():
 
 
 def _do_select_short_action():
-    global _media_state, _screen, _notif_nav_mode, _media_control_mode
+    global _media_state, _screen, _notif_nav_mode, _media_control_mode, _ble_control_nav_mode
     if _screen == SCREEN_SYNC_LOCK:
         return
     if _screen == SCREEN_SETTINGS:
@@ -1222,9 +1175,11 @@ def _do_select_short_action():
     if _screen == SCREEN_BLE_SCAN:
         return
     if _screen == SCREEN_BLE_CONTROL:
-        return
-    if _screen == SCREEN_BLE_CMD_PICKER:
-        _ble_cmd_picker_confirm()
+        if not _ble_control_nav_mode:
+            _ble_control_nav_mode = True
+        else:
+            _ble_control_send(_BLE_CMD_LIST[_ble_control_selected_idx])
+        _mark_dirty()
         return
     if _screen == SCREEN_BLE_BLOCKED:
         _ble_blocked_disconnect()
@@ -1651,8 +1606,6 @@ def draw_frame():
         draw_ble_scan_screen()
     elif _screen == SCREEN_BLE_CONTROL:
         draw_ble_control_screen()
-    elif _screen == SCREEN_BLE_CMD_PICKER:
-        draw_ble_cmd_picker_screen()
     elif _screen == SCREEN_BLE_BLOCKED:
         draw_ble_blocked_screen()
     _f2 = time.ticks_ms()
@@ -1872,6 +1825,7 @@ def main_loop():
 
         veille_ms = VEILLE_OPTIONS_MS[_veille_idx]
         if (not bs and _screen != SCREEN_SETTINGS and _screen != SCREEN_SYNC_LOCK
+                and _screen != SCREEN_BLE_CONTROL
                 and time.ticks_diff(now, last_activity) >= veille_ms):
             backlightF()
 
