@@ -3,7 +3,9 @@ import json
 import sys
 import machine
 import gc
+import esp32
 gc.collect()
+print("just vefore sprite:", esp32.idf_heap_info(esp32.HEAP_DATA))
 try:
     import sprite
 except Exception as e:
@@ -13,7 +15,6 @@ except Exception as e:
     machine.reset()
     
 from machine import PWM, Pin, freq
-import esp32
 from phone_link import PhoneLink
 import battery
 import pedometer
