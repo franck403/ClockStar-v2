@@ -1,6 +1,9 @@
 import time
 import json
 import sys
+import machine
+import gc
+gc.collect()
 try:
     import sprite
 except Exception as e:
@@ -16,7 +19,6 @@ import battery
 import pedometer
 import render
 import Clockstar_v2 as cs
-import gc
 
 WIDTH = cs.display.width
 HEIGHT = cs.display.height
