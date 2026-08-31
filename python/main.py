@@ -4,8 +4,7 @@ import sys
 import machine
 import gc
 import esp32
-gc.collect()
-print("just vefore sprite:", esp32.idf_heap_info(esp32.HEAP_DATA))
+
 try:
     import sprite
 except Exception as e:
@@ -55,8 +54,40 @@ def draw_background():
     _t2 = time.ticks_ms()
     print("draw_background: fill=%dms blit=%dms" % (
         time.ticks_diff(_t1, _t0), time.ticks_diff(_t2, _t1)))
- 
 
+
+# ---------------------------------------------------------------------------
+# Alternate background (BLE control mode)
+# ---------------------------------------------------------------------------
+# Control mode replaces the normal clock face while a command session is
+# active over BLE, so it gets its own background sprite -- control_bg.spr
+# -- loaded and drawn exactly like clock_bg.spr/draw_background() above
+# (same peek_size-at-import-time + centered blit_file pattern), just
+# pointed at a different file so control mode is visually distinct from
+# the plain clock face. Falls back to a flat black fill if control_bg.spr
+# isn't present on the filesystem, same as HAVE_BG above.
+ALT_BG_SPRITE_PATH = "control_bg.spr"
+HAVE_ALT_BG = False
+_ALT_BG_W = _ALT_BG_H = 0
+if hasattr(display, "blit"):
+    try:
+        _ALT_BG_W, _ALT_BG_H = sprite.peek_size(ALT_BG_SPRITE_PATH)
+        HAVE_ALT_BG = True
+    except OSError:
+        pass
+
+
+def draw_background_alternative():
+    _t0 = time.ticks_ms()
+    display.fill(Color.Black)
+    _t1 = time.ticks_ms()
+    if HAVE_ALT_BG:
+        bg_x = (WIDTH - _ALT_BG_W) // 2
+        bg_y = (HEIGHT - _ALT_BG_H) // 2
+        sprite.blit_file(display, ALT_BG_SPRITE_PATH, bg_x, bg_y)
+    _t2 = time.ticks_ms()
+    print("draw_background_alternative: fill=%dms blit=%dms" % (
+        time.ticks_diff(_t1, _t0), time.ticks_diff(_t2, _t1)))
 
 
 BATT_ICONS = sprite.IconSet(
@@ -313,6 +344,12 @@ _prev_screen = SCREEN_CLOCK
 _dirty = True
 _notif_nav_mode = False
 _media_control_mode = False
+# _BLE_NAV gates the BLE command picker's own UP/DOWN cursor movement.
+# It's True exactly while SCREEN_BLE_CMD_PICKER is the active screen and
+# False otherwise -- set in _enter_ble_cmd_picker()/_exit_ble_cmd_picker()
+# below, mirroring how _notif_nav_mode/_media_control_mode gate their own
+# screens' UP/DOWN behaviour elsewhere in this file.
+_BLE_NAV = False
 
 
 def _mark_dirty():
@@ -822,14 +859,20 @@ def _exit_ble_control():
 
 
 def _enter_ble_cmd_picker():
-    global _screen, _ble_cmd_picker_selected_idx
+    # Entered from SCREEN_BLE_CONTROL via UP (see _on_up_press). Sets
+    # _BLE_NAV True so this sub-screen's own UP/DOWN handlers
+    # (_ble_cmd_picker_on_up/_down) take over the cursor -- mirrors
+    # _notif_nav_mode/_media_control_mode gating their screens elsewhere.
+    global _screen, _ble_cmd_picker_selected_idx, _BLE_NAV
     _ble_cmd_picker_selected_idx = 0
+    _BLE_NAV = True
     _screen = SCREEN_BLE_CMD_PICKER
     _mark_dirty()
 
 
 def _exit_ble_cmd_picker():
-    global _screen
+    global _screen, _BLE_NAV
+    _BLE_NAV = False
     _screen = SCREEN_BLE_CONTROL
     _mark_dirty()
 
@@ -969,9 +1012,12 @@ def _ble_scan_on_down():
 def draw_ble_control_screen():
     # Deliberately mirrors draw_clock_screen()'s layout (time + date,
     # connection badge) since this replaces the normal clock face while
-    # in control mode -- same background/positions, just no notif/media/
-    # pedometer cycling and UP opens the command picker instead.
-    draw_background()
+    # in control mode -- same text positions, just drawn over
+    # draw_background_alternative() instead of the normal clock_bg.spr
+    # background, so control mode is visually distinct from the plain
+    # clock face at a glance. No notif/media/pedometer cycling here; UP
+    # opens the command picker instead (see _on_up_press).
+    draw_background_alternative()
     draw_connection_badge()
 
     h, m, _s = get_local_time()
@@ -995,7 +1041,7 @@ def draw_ble_control_screen():
         sent_str = "Sent: %s" % _ble_control_last_cmd
         display.text(sent_str, (WIDTH - len(sent_str) * 8) // 2, date_y + 14 if year is not None else divider_y + 8, Color.White)
 
-    draw_footer_hint("UP:commands BACK exit")
+    draw_footer_hint("UP commands BACK exit")
 
 
 def draw_ble_cmd_picker_screen():
@@ -1028,7 +1074,7 @@ def main_loop_ble_control_flash_tick():
 # ---------------------------------------------------------------------------
 
 def _on_up_press():
-    global _screen, _selected_notif_idx
+    global _screen, _selected_notif_idx, _BLE_NAV
     if bs:
         backlightO()
         return
@@ -1043,7 +1089,7 @@ def _on_up_press():
     if _screen == SCREEN_BLE_CONTROL:
         _enter_ble_cmd_picker()
         return
-    if _screen == SCREEN_BLE_CMD_PICKER:
+    if _screen == SCREEN_BLE_CMD_PICKER and _BLE_NAV:
         _ble_cmd_picker_on_up()
         return
     if _screen == SCREEN_BLE_BLOCKED:
@@ -1062,7 +1108,7 @@ def _on_up_press():
 
 
 def _on_down_press():
-    global _screen, _selected_notif_idx
+    global _screen, _selected_notif_idx, _BLE_NAV
     if bs:
         backlightO()
         return
@@ -1074,10 +1120,11 @@ def _on_down_press():
     if _screen == SCREEN_BLE_SCAN:
         _ble_scan_on_down()
         return
-    if _screen == SCREEN_BLE_CONTROL:
-        return
-    if _screen == SCREEN_BLE_CMD_PICKER:
+    if _screen == SCREEN_BLE_CMD_PICKER and _BLE_NAV:
         _ble_cmd_picker_on_down()
+        return
+    if _screen == SCREEN_BLE_CONTROL:
+        _exit_ble_cmd_picker()
         return
     if _screen == SCREEN_BLE_BLOCKED:
         return
