@@ -1,6 +1,5 @@
 from micropython import const
 from machine import SPI, Pin, I2C, Signal
-import efuse
 from .st7735_mini import ST7735
 from .piezo_mini import Piezo
 from .rgb_mini import RGBLed
@@ -44,7 +43,7 @@ class Pins:
 # kept as an alias for any old code that imports the lowercase name
 pins = Pins
 
-revision = efuse.read_rev()
+revision = 2 # to finish later
 
 spi_tft = SPI(2, baudrate=10000000, polarity=0, phase=0,
               sck=Pin(Pins.get(Pins.TFT_SCK)), mosi=Pin(Pins.get(Pins.TFT_MOSI)))
