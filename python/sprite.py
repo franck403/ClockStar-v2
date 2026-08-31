@@ -12,7 +12,7 @@ MAX_WIDTH = 128
 # idf_heap_info -- that free memory was in a different region /
 # non-contiguous chunks, not usable for one bytearray). 128*2*2 = 512B
 # is small enough to fit in the fragmented gaps we actually see at boot.
-CHUNK_ROWS = 2
+CHUNK_ROWS = 1
 
 # Lazily allocated instead of at import time. Importing this module no
 # longer allocates a large contiguous buffer itself -- the caller (or
