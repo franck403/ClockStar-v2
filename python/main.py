@@ -351,23 +351,6 @@ def _mark_dirty():
 # ---------------------------------------------------------------------------
 # Delayed sync -> clock screen transition
 # ---------------------------------------------------------------------------
-# BLE time-sync lands as a burst of several small packets right as pairing
-# completes (see the MTU-truncation notes -- writes over ~20 bytes get
-# split/truncated with no clean boundary). Switching to SCREEN_CLOCK the
-# instant set_rtc() fires used to immediately trigger the first full-screen
-# blit_file() of the session (clock_bg.spr is the largest sprite drawn
-# anywhere in the app) while that BLE burst was still actively landing.
-# That collision between the heavy display blit and concurrent BLE RX
-# appears to be what corrupts state badly enough to crash cs.begin() on
-# the *next* boot -- not the icon draw on the lock screen itself.
-#
-# Fix: _on_sync_acquired() no longer flips _screen directly. It just arms
-# a timer. main_loop() only performs the actual switch to SCREEN_CLOCK
-# once SYNC_TRANSITION_DELAY_MS has passed with no further action needed,
-# giving the BLE stack a few poll cycles to drain the burst before the
-# first heavy draw happens. The lock screen keeps rendering normally
-# during that window, so there's no visible glitch -- it just holds the
-# "Connected..." state a beat longer before handing off to the clock.
 SYNC_TRANSITION_DELAY_MS = 400
 _sync_transition_pending_at = None
 
@@ -430,12 +413,6 @@ def _close_settings():
 _SYNC_DOT_FRAMES = ("", ".", "..", "...")
 _sync_anim_idx = 0
 _sync_screen_battery_drawn = False
-# NOTE: this MUST live at module scope, not inside main_loop(). It's read
-# from _update_active_ui(), a separate module-level function that has no
-# visibility into main_loop()'s locals -- a local copy of the same name
-# inside main_loop() shadowed this value there but left every other
-# reader seeing an undefined name, which is what caused the
-# "NameError: name 'SYNC_ANIM_INTERVAL_MS' isn't defined" crash.
 SYNC_ANIM_INTERVAL_MS = 500
 
 
@@ -447,8 +424,6 @@ def draw_sync_lock_screen(full_redraw=True):
     frees several buffers per call, and redrawing it every 500ms forever
     while someone sits unpaired on this screen was fragmenting the heap
     badly enough to eventually starve BLE controller init on reboot.
-    Since nothing about the battery icon actually needs to change every
-    animation tick, it's only drawn once per screen entry.
     """
     global _sync_screen_battery_drawn
 
@@ -472,8 +447,6 @@ def draw_sync_lock_screen(full_redraw=True):
         draw_battery_icon(WIDTH - 4 - 14 - 2, 3, invert=False)
         _sync_screen_battery_drawn = True
     else:
-        # Clear just the status line's row before redrawing shorter text
-        # over longer previous text (e.g. "Connected..." -> "Waiting").
         display.fill_rect(0, status_y, WIDTH, 10, Color.Black)
 
     if _ble_connected:
@@ -503,8 +476,9 @@ _SETTINGS_NUM_ROWS = 5
 _settings_selected_row = 0
 _settings_in_row = False
 
-# BLE tools is a small sub-page with its own 2-entry cursor, navigated the
-# same way as every other in-row screen (UP/DOWN moves, SEL commits).
+# BLE tools is a small sub-page with its own 2-entry cursor: Scan devices
+# and Control mode, navigated the same way as every other in-row screen
+# (UP/DOWN moves, SEL commits).
 _BLE_TOOLS_OPT_SCAN = 0
 _BLE_TOOLS_OPT_CONTROL = 1
 _BLE_TOOLS_OPTIONS = ("Scan devices", "Control mode")
@@ -733,7 +707,13 @@ def _settings_on_back():
 # cannot scan (central role) while a phone is actively connected
 # (peripheral role) without tearing down that link. Rather than silently
 # disconnecting the phone, we show a blocking screen with an explicit
-# "disconnect first" action -- see SCREEN_BLE_BLOCKED.
+# "disconnect first" action -- see SCREEN_BLE_BLOCKED. Control mode is
+# gated the SAME way even though it only uses the existing peripheral
+# link (not central/scan role) -- while a phone is connected, that link
+# is busy servicing the phone protocol (time sync, notifs, media), and
+# sending raw control-mode strings down the same NUS TX/RX pair would
+# collide with/corrupt that traffic. So control mode also requires the
+# phone to be disconnected first, exactly like scan.
 
 BLE_SCAN_DURATION_MS = 6000
 
@@ -762,14 +742,9 @@ _ble_cmd_picker_selected_idx = 0
 # _ble_return_screen tracks where BACK should take you out of any of the
 # three BLE screens (scan / control / blocked). This is DELIBERATELY kept
 # separate from _prev_screen (which belongs to _open_settings/
-# _close_settings). The two entry points below both set it to
-# SCREEN_SETTINGS -- their only entry path -- and every exit reads from
-# it, never from _prev_screen. Sharing _prev_screen here was the bug that
-# trapped BACK in a SETTINGS<->BLE_SCREEN loop: entering a BLE screen
-# while inside settings overwrote _prev_screen (which was correctly
-# pointing at SCREEN_CLOCK, set when settings was first opened), so
-# closing settings afterwards sent you right back into settings instead
-# of out to the clock.
+# _close_settings). Both entry points below set it to SCREEN_SETTINGS --
+# their only entry path -- and every exit reads from it, never from
+# _prev_screen.
 _ble_return_screen = SCREEN_SETTINGS
 # Which BLE screen to proceed into once a blocking phone connection drops
 # -- set right before showing SCREEN_BLE_BLOCKED so _ble_blocked_recheck()
@@ -1002,12 +977,10 @@ def _ble_scan_on_down():
 
 def draw_ble_control_screen():
     # Deliberately mirrors draw_clock_screen()'s layout (time + date,
-    # connection badge) since this replaces the normal clock face while
-    # in control mode -- same text positions, just drawn over
-    # draw_background_alternative() instead of the normal clock_bg.spr
-    # background, so control mode is visually distinct from the plain
-    # clock face at a glance. No notif/media/pedometer cycling here; UP
-    # opens the command picker instead (see _on_up_press).
+    # connection badge) but drawn over draw_background_alternative()
+    # instead of the normal clock_bg.spr background, so control mode is
+    # visually distinct from the plain clock face at a glance. UP opens
+    # the command picker (see _on_up_press); DOWN backs out of it.
     draw_background_alternative()
     draw_connection_badge()
 
@@ -1022,15 +995,16 @@ def draw_ble_control_screen():
     display.fill_rect((WIDTH - divider_w) // 2, divider_y, divider_w, 1, Color.White)
 
     year, month, day = get_local_date()
+    date_y = divider_y + 8
     if year is not None:
         date_str = "{:02d}/{:02d}/{:04d}".format(day, month, year)
         date_x = (WIDTH - len(date_str) * 8) // 2
-        date_y = divider_y + 8
         display.text(date_str, date_x, date_y, Color.White)
 
     if _ble_control_last_cmd and time.ticks_diff(time.ticks_ms(), _ble_control_last_cmd_at) < BLE_CONTROL_CMD_FLASH_MS:
         sent_str = "Sent: %s" % _ble_control_last_cmd
-        display.text(sent_str, (WIDTH - len(sent_str) * 8) // 2, date_y + 14 if year is not None else divider_y + 8, Color.White)
+        sent_y = date_y + 14 if year is not None else divider_y + 8
+        display.text(sent_str, (WIDTH - len(sent_str) * 8) // 2, sent_y, Color.White)
 
     draw_footer_hint("UP commands BACK exit")
 
@@ -1115,7 +1089,6 @@ def _on_down_press():
         _ble_cmd_picker_on_down()
         return
     if _screen == SCREEN_BLE_CONTROL:
-        _exit_ble_cmd_picker()
         return
     if _screen == SCREEN_BLE_BLOCKED:
         return
@@ -1770,12 +1743,11 @@ def main_loop():
     GYRO_POLL_OFF_MS = 1000
     BLE_POLL_ON_MS = 150
     BLE_POLL_OFF_MS = 2000
-    # NOTE: SYNC_ANIM_INTERVAL_MS is NOT defined here anymore. It used to be
-    # a local right here, which shadowed the module-level constant only
-    # inside this function -- every other function reading it (like
-    # _update_active_ui) saw an undefined name and crashed with
-    # NameError: name 'SYNC_ANIM_INTERVAL_MS' isn't defined. It now lives
-    # at module scope next to the other sync-lock screen state, above.
+    # NOTE: SYNC_ANIM_INTERVAL_MS lives at module scope (see the sync-lock
+    # screen state block above), NOT as a local here -- a local of the
+    # same name here previously shadowed it only inside this function,
+    # leaving every other reader (like _update_active_ui) see an
+    # undefined name and crash with NameError.
 
     while True:
         pedometer.poll()
@@ -1862,7 +1834,9 @@ def main_loop():
             last_battery_log = now
 
         veille_ms = VEILLE_OPTIONS_MS[_veille_idx]
-        if (not bs and _screen != SCREEN_SETTINGS and _screen != SCREEN_SYNC_LOCK
+        veille_exempt = _screen in (SCREEN_SETTINGS, SCREEN_SYNC_LOCK, SCREEN_BLE_CONTROL,
+                                     SCREEN_BLE_CMD_PICKER, SCREEN_BLE_SCAN, SCREEN_BLE_BLOCKED)
+        if (not bs and not veille_exempt
                 and time.ticks_diff(now, last_activity) >= veille_ms):
             backlightF()
 
