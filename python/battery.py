@@ -1,7 +1,7 @@
 import time
 from machine import ADC, Pin
 
-BATTERY_PIN = 36
+BATTERY_PIN = 8
 adc = ADC(Pin(BATTERY_PIN))
 adc.atten(ADC.ATTN_11DB)
 
