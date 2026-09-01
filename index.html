@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ClockStar v2 Web Installer</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -24,7 +23,6 @@
         },
       };
     </script>
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
@@ -75,8 +73,6 @@
             >
           </div>
         </div>
-
-        <!-- Status Indicators -->
         <div class="flex items-center space-x-3">
           <div
             id="connectionBadge"
@@ -93,7 +89,7 @@
     <main
       class="max-w-6xl mx-auto px-4 py-6 w-full flex-1 flex flex-col space-y-6"
     >
-      <!-- Warning / Notice Banner -->
+      <!-- Warning Banner -->
       <div
         class="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start space-x-3 text-amber-200"
       >
@@ -110,11 +106,12 @@
             class="bg-amber-950/60 text-amber-300 px-1.5 py-0.5 rounded border border-amber-800/40 text-xs font-mono"
             >settings.json</code
           >) will be replaced, so idle timeout and tilt-to-wake preferences
-          reset to defaults after flashing.
+          reset to defaults after flashing. Flashing MicroPython itself (Step 0)
+          fully erases the flash.
         </div>
       </div>
 
-      <!-- Notification Box (Replaces alerts) -->
+      <!-- Notification Box -->
       <div
         id="notificationBanner"
         class="hidden rounded-2xl p-4 border flex items-center justify-between text-sm transition-all duration-300"
@@ -135,7 +132,153 @@
         </button>
       </div>
 
-      <!-- Action Panel: single unified button -->
+      <!-- STEP 0: Firmware check / MicroPython install choice (hidden until connected) -->
+      <div
+        id="firmwareCheckPanel"
+        class="hidden bg-slate-900 border border-amber-700/40 rounded-2xl p-5 space-y-4 shadow-lg"
+      >
+        <div class="flex items-center justify-between">
+          <span
+            class="text-xs font-bold tracking-wider text-amber-400 uppercase"
+            >Step 0 &bull; No MicroPython Detected</span
+          >
+          <i data-lucide="help-circle" class="w-5 h-5 text-amber-500"></i>
+        </div>
+        <p class="text-sm text-slate-300 leading-relaxed">
+          The installer couldn't find a MicroPython REPL on this device. This
+          can mean one of two things:
+        </p>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <button
+            onclick="chooseFirmwarePath('bricked')"
+            class="text-left p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-rose-500/50 rounded-xl transition-all space-y-1.5"
+          >
+            <div
+              class="flex items-center space-x-2 text-rose-300 font-semibold text-sm"
+            >
+              <i data-lucide="alert-octagon" class="w-4 h-4"></i>
+              <span>1. Device is bricked / unresponsive</span>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              The watch doesn't respond to the interrupt sequence at all, even
+              after reboot attempts. This usually means the firmware crashed
+              badly or flash got corrupted.
+            </p>
+          </button>
+          <button
+            onclick="chooseFirmwarePath('install')"
+            class="text-left p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500/50 rounded-xl transition-all space-y-1.5"
+          >
+            <div
+              class="flex items-center space-x-2 text-cyan-300 font-semibold text-sm"
+            >
+              <i data-lucide="download" class="w-4 h-4"></i>
+              <span>2. Install / reinstall MicroPython</span>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              The watch is on stock firmware, blank, or you just want to reflash
+              MicroPython from a .bin file before installing the ClockStar
+              files.
+            </p>
+          </button>
+        </div>
+        <div
+          id="brickedHelp"
+          class="hidden bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 text-sm text-rose-200 space-y-2"
+        >
+          <p class="font-semibold text-rose-300">Try this first:</p>
+          <ol class="list-decimal list-inside space-y-1 text-rose-200/90">
+            <li>Unplug the watch fully (remove USB) and wait 10 seconds.</li>
+            <li>
+              Hold the reset/boot button (if present) while plugging back in.
+            </li>
+            <li>Reconnect here and try again.</li>
+          </ol>
+          <p class="text-rose-200/90">
+            If it still doesn't respond, use "Install / reinstall MicroPython"
+            below anyway &mdash; putting the ESP32-S3 into its ROM bootloader
+            (BOOT button held while plugging in, or via the reset pulse this
+            tool sends) lets esptool talk to it even with no working firmware at
+            all.
+          </p>
+          <button
+            onclick="chooseFirmwarePath('install')"
+            class="mt-1 px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 rounded-lg text-xs font-medium"
+          >
+            Continue to MicroPython install anyway &rarr;
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 0b: MicroPython .bin flashing panel (hidden until chosen) -->
+      <div
+        id="mpyFlashPanel"
+        class="hidden bg-slate-900 border border-cyan-700/40 rounded-2xl p-5 space-y-4 shadow-lg"
+      >
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold tracking-wider text-cyan-400 uppercase"
+            >Step 0 &bull; Flash MicroPython</span
+          >
+          <i data-lucide="cpu" class="w-5 h-5 text-cyan-500"></i>
+        </div>
+        <p class="text-sm text-slate-300 leading-relaxed">
+          Select a MicroPython
+          <code class="bg-slate-800 px-1.5 py-0.5 rounded text-xs font-mono"
+            >.bin</code
+          >
+          firmware image built for ESP32-S3 (a combined image flashed at offset
+          <span class="font-mono">0x0</span> is expected &mdash; e.g. a
+          CircuitMess/MicroPython "firmware.bin" or "GENERIC_S3" build). This
+          will
+          <strong class="text-cyan-300">erase the entire flash</strong> before
+          writing.
+        </p>
+        <input
+          id="mpyBinInput"
+          type="file"
+          accept=".bin"
+          class="block w-full text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 file:cursor-pointer cursor-pointer bg-slate-800 border border-slate-700 rounded-xl"
+        />
+        <div class="flex items-center space-x-2">
+          <button
+            id="mpyFlashBtn"
+            onclick="flashMicroPython()"
+            disabled
+            class="flex-1 py-3 px-4 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-medium rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-cyan-950/50 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
+          >
+            <i id="mpyFlashBtnIcon" data-lucide="zap" class="w-4 h-4"></i>
+            <span id="mpyFlashBtnText">Select a .bin file first</span>
+          </button>
+          <button
+            onclick="skipMicroPythonFlash()"
+            class="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all text-sm"
+          >
+            Skip, already installed
+          </button>
+        </div>
+        <div id="mpyFlashProgress" class="hidden space-y-2">
+          <div class="flex justify-between items-center text-sm">
+            <span id="mpyFlashStatusText" class="font-medium text-slate-200"
+              >Preparing...</span
+            >
+            <span
+              id="mpyFlashPercentText"
+              class="font-mono text-cyan-400 font-bold"
+              >0%</span
+            >
+          </div>
+          <div
+            class="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800 p-0.5"
+          >
+            <div
+              id="mpyFlashBarInner"
+              class="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full rounded-full transition-all duration-300 w-0"
+            ></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Panel: unified Connect / Install button -->
       <div
         class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-lg hover:border-slate-700 transition-all"
       >
@@ -181,7 +324,7 @@
         </div>
       </div>
 
-      <!-- Installation Progress Bar (Hidden by default) -->
+      <!-- Installation Progress Bar -->
       <div
         id="progressContainer"
         class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3"
@@ -212,12 +355,11 @@
         </div>
       </div>
 
-      <!-- Serial Terminal Log Window (hidden by default) -->
+      <!-- Serial Terminal Log Window -->
       <div
         id="terminalPanel"
         class="hidden bg-slate-900 border border-slate-800 rounded-2xl flex flex-col flex-1 min-h-[320px] overflow-hidden shadow-2xl"
       >
-        <!-- Terminal Control Header -->
         <div
           class="bg-slate-950 px-4 py-2.5 border-b border-slate-800 flex items-center justify-between"
         >
@@ -255,8 +397,6 @@
             </button>
           </div>
         </div>
-
-        <!-- Terminal Output Area -->
         <div
           id="terminalOutput"
           class="flex-1 p-4 font-mono text-xs overflow-y-auto custom-scrollbar space-y-1 bg-slate-950/60"
@@ -282,19 +422,37 @@
       >
     </footer>
 
+    <script type="module">
+      // ==========================================
+      // esptool-js (module import from CDN bundle)
+      // ==========================================
+      import {
+        ESPLoader,
+        Transport,
+      } from 'https://unpkg.com/esptool-js/bundle.js';
+      window.__esptool = { ESPLoader, Transport };
+    </script>
+
     <script>
       // ==========================================
       // CONFIGURATION & FILE MANIFEST
       // ==========================================
+      // NOTE: switched from jsDelivr's gh/ CDN to raw.githubusercontent.com.
+      // jsDelivr caches unversioned gh/ URLs aggressively and does NOT
+      // refetch on every commit -- it was serving stale files after pushes.
+      // raw.githubusercontent.com reflects the branch HEAD immediately, and
+      // we also cache-bust the fetch itself below to defeat the browser's
+      // own HTTP cache on top of that.
       const REPO_BASE =
-        'https://cdn.jsdelivr.net/gh/franck403/ClockStar-v2/python/';
+        'https://raw.githubusercontent.com/franck403/ClockStar-v2/main/python/';
 
-      const INSTALL_FILES = [
-        // Core python modules
+      // Root-level files, transferred to the watch's filesystem root.
+      const INSTALL_FILES_ROOT = [
         'battery.py',
         'ble_nus.py',
         'boot.py',
         'clock_bg.spr',
+        'control_bg.spr',
         'main.py',
         'pedometer.py',
         'phone_link.py',
@@ -302,7 +460,6 @@
         'settings.json',
         'sprite.py',
 
-        // Icon Sprites (direct copy to icons/)
         'icons/batt_charging.spr',
         'icons/batt_critical.spr',
         'icons/batt_full.spr',
@@ -311,6 +468,20 @@
         'icons/phone_connected.spr',
         'icons/settings_slider.spr',
         'icons/settings_slider_track.spr',
+
+        'Clockstar_v2/__init__.py',
+        'Clockstar_v2/st7735_mini.py',
+        'Clockstar_v2/piezo_mini.py',
+        'Clockstar_v2/rgb_mini.py',
+        'Clockstar_v2/imu_mini.py',
+        'Clockstar_v2/rtc_mini.py',
+        'Clockstar_v2/board.py',
+        'Clockstar_v2/input_mini.py',
+      ];
+      // Combined manifest used by the installer loop. Each entry carries
+      // its destination path on the watch (relative to filesystem root).
+      const INSTALL_FILES = [
+        ...INSTALL_FILES_ROOT.map((f) => ({ repoPath: f, destPath: f })),
       ];
 
       // ==========================================
@@ -323,6 +494,8 @@
       let incomingBuffer = '';
       let isFlashing = false;
       let writeLock = Promise.resolve(); // Serial write mutex
+      let firmwareDetected = null; // null = unknown, true/false once checked
+      let mpyBinFile = null;
 
       // Initialize Lucide Icons
       lucide.createIcons();
@@ -335,6 +508,19 @@
             e.preventDefault();
             sendCtrlC();
           }
+        }
+      });
+
+      document.getElementById('mpyBinInput').addEventListener('change', (e) => {
+        mpyBinFile = e.target.files[0] || null;
+        const btn = document.getElementById('mpyFlashBtn');
+        const btnText = document.getElementById('mpyFlashBtnText');
+        if (mpyBinFile) {
+          btn.disabled = false;
+          btnText.innerText = `Flash ${mpyBinFile.name}`;
+        } else {
+          btn.disabled = true;
+          btnText.innerText = 'Select a .bin file first';
         }
       });
 
@@ -391,8 +577,23 @@
 
       // ==========================================
       // LOGGING UTILITIES
+      // RX chunk (2B): "\u0004>"
+      // RX chunk (2B): "ok"
       // ==========================================
       function logSerial(msg, type = 'info') {
+        if (
+          msg == 'RX chunk (1B): "O"' ||
+          msg == 'RX chunk (1B): "K"' ||
+          msg == 'RX chunk (2B): "OK"' ||
+          msg == 'RX chunk (2B): "ok"' ||
+          msg == 'RX chunk (2B): "\\u0004>"' ||
+          msg == 'RX chunk (1B): "\\u0004"' ||
+          msg == 'RX chunk (2B): "\\u0004\\u0004"' ||
+          msg == 'RX chunk (3B): "\\u0004\\u0004>­"' ||
+          msg == 'RX chunk (1B): ">"'
+        ) {
+          return;
+        }
         const term = document.getElementById('terminalOutput');
         const line = document.createElement('div');
 
@@ -426,15 +627,6 @@
       // ==========================================
       // THREAD-SAFE SERIAL WRITER (persistent, like pyserial/Thonny)
       // ==========================================
-      // Web Serial's getWriter()/releaseLock() is meant to be called once per
-      // session, not once per write. Repeatedly acquiring and releasing the
-      // writer lock in fast bursts (as the old code did on every single byte
-      // sent during interrupt sequences) appears to be what triggered the
-      // AbortError -- Thonny/pyserial never does this, it opens the stream
-      // once and writes to it directly for the whole session, which is why
-      // Thonny has no trouble interrupting the same device. This mirrors
-      // that: one writer, created on connect, reused for every write, only
-      // released on disconnect.
       function _getPersistentWriter() {
         if (!port || !port.writable)
           throw new Error('Serial port is not connected or writable.');
@@ -457,19 +649,9 @@
         if (!port || !port.writable)
           throw new Error('Serial port is not connected or writable.');
 
-        // Queue writes through writeLock mutex so concurrent callers don't
-        // race writes against the same underlying writer.
         writeLock = writeLock.then(async () => {
           const encoder = new TextEncoder();
           const fullBytes = encoder.encode(data);
-
-          // Chunk large writes instead of handing the driver one big blob.
-          // Raw REPL commands (filename + ~340 chars of base64 per file
-          // chunk) sent back-to-back as single large write() calls were
-          // reliably AbortError-ing after 2-3 in a row -- consistent with
-          // overrunning this device's native USB-CDC TX buffer. Small
-          // writes with tiny pauses keep us well under whatever that limit
-          // is, regardless of what's actually causing it.
           const WRITE_CHUNK_SIZE = 64;
 
           try {
@@ -489,11 +671,6 @@
             const portState = port
               ? `writable=${!!port.writable} readable=${!!port.readable}`
               : 'port=null';
-
-            // A write failing while writable is still true means the device
-            // couldn't accept this particular write right now -- transient,
-            // not a real disconnect. Drop the (possibly now-broken) writer
-            // and reopen a fresh one before retrying.
             const isTransient = port && port.writable;
 
             if (isTransient && retriesLeft > 0) {
@@ -530,9 +707,6 @@
             }
             throw err;
           }
-          // NOTE: no releaseLock() here on the success path -- the writer
-          // stays open for the next call, same as pyserial keeping the
-          // port open for the whole session.
         });
 
         return writeLock;
@@ -565,8 +739,6 @@
                   'info'
                 );
                 incomingBuffer += chunk;
-
-                // Keep buffer lean
                 if (incomingBuffer.length > 16384) {
                   incomingBuffer = incomingBuffer.substring(
                     incomingBuffer.length - 8192
@@ -603,7 +775,7 @@
       // ==========================================
       // UNIFIED MAIN ACTION BUTTON (Connect -> Install)
       // ==========================================
-      let watchReady = false; // true once connected AND safeguard check passed
+      let watchReady = false;
 
       function _setMainButton(text, opts = {}) {
         const btn = document.getElementById('mainActionBtn');
@@ -664,27 +836,12 @@
           const BAUD_RATE = 57600;
           await port.open({ baudRate: BAUD_RATE });
 
-          // NOTE: previously pulsed DTR/RTS here to try to force a hardware
-          // reset. Dropped: the boot log we saw once appears to have been
-          // caused by the port opening itself (rst reason was
-          // USB_UART_CHIP_RESET), not by the pulse -- no subsequent pulse
-          // ever produced a new boot log, and this device's native USB-CDC
-          // (ESP32-S3) doesn't have a real FTDI/CP2102-style auto-reset
-          // circuit wired to those signals. Thonny works reliably using pure
-          // software Ctrl+D/Ctrl+C, so we do the same here instead of
-          // touching signals that may be silently breaking the stream.
-
           startSerialReader();
 
-          // Connected, but keep the button disabled/showing "Verifying"
-          // until the safeguard check below finishes -- it sends its own
-          // interrupt sequence on this same port, and letting the user
-          // click through mid-check causes two sequences to race on the
-          // same writeLock/incomingBuffer.
           updateConnectionUI(true, { keepInstallDisabled: true });
           _setMainButton('Verifying...', { disabled: true, icon: 'loader-2' });
           _setMainCard(
-            'Step 1 of 2',
+            'Step 0',
             'Checking Your Watch',
             "Connected — making sure it's running MicroPython before we touch anything.",
             'search'
@@ -694,10 +851,26 @@
             'success'
           );
 
-          // Perform safeguard check
-          await verifyMicroPythonInstalled();
+          const found = await verifyMicroPythonInstalled();
+          firmwareDetected = found;
 
-          // Safeguard done -- now safe to allow installation.
+          if (!found) {
+            document
+              .getElementById('firmwareCheckPanel')
+              .classList.remove('hidden');
+            _setMainButton('Resolve Step 0 above', {
+              disabled: true,
+              icon: 'help-circle',
+            });
+            _setMainCard(
+              'Step 0',
+              'MicroPython Not Detected',
+              'Choose an option above before continuing.',
+              'help-circle'
+            );
+            return;
+          }
+
           watchReady = true;
           _setMainButton('Install to Watch', {
             disabled: false,
@@ -726,27 +899,166 @@
         }
       }
 
-      async function hardResetPulse() {
-        if (!port) return false;
+      // ==========================================
+      // STEP 0: FIRMWARE CHECK BRANCHING
+      // ==========================================
+      function chooseFirmwarePath(choice) {
+        if (choice === 'bricked') {
+          document.getElementById('brickedHelp').classList.remove('hidden');
+          return;
+        }
+        if (choice === 'install') {
+          document.getElementById('firmwareCheckPanel').classList.add('hidden');
+          document.getElementById('mpyFlashPanel').classList.remove('hidden');
+          _setMainCard(
+            'Step 0',
+            'Flash MicroPython First',
+            'Select a .bin file above and flash it, or skip if MicroPython is actually already there.',
+            'cpu'
+          );
+        }
+      }
+
+      function skipMicroPythonFlash() {
+        document.getElementById('mpyFlashPanel').classList.add('hidden');
+        watchReady = true;
+        _setMainButton('Install to Watch', {
+          disabled: false,
+          icon: 'download-cloud',
+        });
+        _setMainCard(
+          'Step 2 of 2',
+          'Ready to Install',
+          'Proceeding to install the ClockStar files. Click below when ready.',
+          'check-circle-2'
+        );
+      }
+
+      // ==========================================
+      // MICROPYTHON .BIN FLASHING (esptool-js)
+      // ==========================================
+      async function flashMicroPython() {
+        if (!port || !mpyBinFile) return;
+        if (!window.__esptool) {
+          showNotification(
+            "The flashing library hasn't finished loading yet — wait a second and try again.",
+            'error'
+          );
+          return;
+        }
+
+        const flashBtn = document.getElementById('mpyFlashBtn');
+        const flashBtnText = document.getElementById('mpyFlashBtnText');
+        const flashBtnIcon = document.getElementById('mpyFlashBtnIcon');
+        const progressBox = document.getElementById('mpyFlashProgress');
+        const progressBar = document.getElementById('mpyFlashBarInner');
+        const progressStatus = document.getElementById('mpyFlashStatusText');
+        const progressPercent = document.getElementById('mpyFlashPercentText');
+
+        flashBtn.disabled = true;
+        flashBtnText.innerText = 'Flashing...';
+        flashBtnIcon.setAttribute('data-lucide', 'loader-2');
+        flashBtnIcon.classList.add('animate-spin');
+        lucide.createIcons();
+        progressBox.classList.remove('hidden');
+        hideNotification();
+
+        // esptool-js needs exclusive access to the serial port -- release
+        // our own reader/writer first, since Web Serial ports can only
+        // have one locked reader/writer at a time.
+        readLoopActive = false;
+        await _releasePersistentWriter();
+        if (reader) {
+          try {
+            await reader.cancel();
+          } catch (e) {}
+        }
+
+        const term = {
+          clean() {},
+          writeLine(data) {
+            logSerial(data, 'info');
+          },
+          write(data) {
+            logSerial(data, 'info');
+          },
+        };
+
         try {
-          await port.setSignals({
-            dataTerminalReady: false,
-            requestToSend: true,
+          logSerial('=== Starting MicroPython flash via esptool-js ===', 'cmd');
+          const { ESPLoader, Transport } = window.__esptool;
+          const transport = new Transport(port, true);
+          const loader = new ESPLoader({
+            transport,
+            baudrate: 460800,
+            romBaudrate: 115200,
+            terminal: term,
           });
-          await new Promise((r) => setTimeout(r, 100));
-          await port.setSignals({
-            dataTerminalReady: true,
-            requestToSend: false,
+
+          progressStatus.innerText = 'Detecting chip...';
+          const chipName = await loader.main();
+          logSerial(`Connected to: ${chipName}`, 'success');
+
+          const arrayBuffer = await mpyBinFile.arrayBuffer();
+          const firmwareData = new Uint8Array(arrayBuffer);
+
+          progressStatus.innerText = 'Erasing flash (this may take a while)...';
+          progressPercent.innerText = '';
+          logSerial('Erasing full flash before write...', 'cmd');
+
+          await loader.writeFlash({
+            fileArray: [{ data: firmwareData, address: 0x0 }],
+            flashMode: 'dio',
+            flashFreq: '40m',
+            flashSize: '4MB',
+            eraseAll: true,
+            compress: true,
+            reportProgress: (fileIndex, written, total) => {
+              const pct = Math.round((written / total) * 100);
+              progressStatus.innerText = 'Writing firmware...';
+              progressPercent.innerText = `${pct}%`;
+              progressBar.style.width = `${pct}%`;
+            },
           });
-          await new Promise((r) => setTimeout(r, 100));
-          await port.setSignals({
-            dataTerminalReady: false,
-            requestToSend: false,
-          });
-          return true;
-        } catch (sigErr) {
-          logSerial(`Hardware reset pulse failed: ${sigErr.message}`, 'warn');
-          return false;
+
+          logSerial('=== MicroPython flashed successfully! ===', 'success');
+          progressStatus.innerText = 'Rebooting watch...';
+          await loader.after('hard_reset');
+          await transport.disconnect();
+
+          showNotification(
+            'MicroPython flashed. Reconnect the watch to continue with the file install.',
+            'success'
+          );
+          _setMainCard(
+            'Step 0 Complete',
+            'MicroPython Installed',
+            'The watch rebooted with fresh MicroPython. Disconnect and reconnect, then continue to install the ClockStar files.',
+            'check-circle-2'
+          );
+          document.getElementById('mpyFlashPanel').classList.add('hidden');
+
+          // Force a clean reconnect since esptool-js took over the transport.
+          port = null;
+          watchReady = false;
+          updateConnectionUI(false);
+        } catch (err) {
+          logSerial(
+            `MicroPython flash failed: ${err.name || 'Error'} - ${err.message}`,
+            'error'
+          );
+          showNotification(
+            `Flashing MicroPython failed: ${err.message}`,
+            'error'
+          );
+          flashBtn.disabled = false;
+        } finally {
+          flashBtnText.innerText = mpyBinFile
+            ? `Flash ${mpyBinFile.name}`
+            : 'Select a .bin file first';
+          flashBtnIcon.setAttribute('data-lucide', 'zap');
+          flashBtnIcon.classList.remove('animate-spin');
+          lucide.createIcons();
         }
       }
 
@@ -774,14 +1086,16 @@
 
         if (connected) {
           btn.disabled = !!opts.keepInstallDisabled;
-
           badge.className =
             'flex items-center space-x-2 px-3.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs font-medium text-emerald-400';
           badge.innerHTML =
             '<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>Connected</span>';
         } else {
           watchReady = false;
+          firmwareDetected = null;
           btn.disabled = false;
+          document.getElementById('firmwareCheckPanel').classList.add('hidden');
+          document.getElementById('brickedHelp').classList.add('hidden');
           _setMainButton('Connect Watch', { icon: 'plug' });
           _setMainCard(
             'Step 1 of 2',
@@ -789,7 +1103,6 @@
             'Plug your ClockStar v2 into this computer with a USB-C cable, then click Connect and pick its serial port when your browser asks.',
             'usb'
           );
-
           badge.className =
             'flex items-center space-x-2 px-3.5 py-1.5 bg-rose-500/10 border border-rose-500/20 rounded-full text-xs font-medium text-rose-400';
           badge.innerHTML =
@@ -803,10 +1116,6 @@
       async function sendCtrlC() {
         logSerial('Sending Interrupt (Ctrl+C)...', 'warn');
         try {
-          // The watch's idle loop can sleep up to 100ms per iteration at low
-          // clock (20MHz), so bytes sent faster than that can pile up in the
-          // RX buffer between checks instead of landing in separate wake
-          // windows. Space these well past 100ms and send fewer, longer.
           for (let i = 0; i < 6; i++) {
             await writeSerial('\x03');
             await new Promise((r) => setTimeout(r, 180));
@@ -828,16 +1137,16 @@
         }
       }
 
+      // Returns true/false instead of always true -- callers branch on it
+      // to show the Step 0 firmware-check panel.
       async function verifyMicroPythonInstalled() {
         logSerial(
           'Safeguard Check: Verifying MicroPython environment...',
           'info'
         );
 
-        // Give serial reader 300ms to collect any active streaming debug output
         await new Promise((r) => setTimeout(r, 300));
 
-        // Check if watch is already outputting serial data (e.g. debug logs)
         if (incomingBuffer.trim().length > 0) {
           logSerial(
             'Safeguard Passed: Live MicroPython serial output detected!',
@@ -846,11 +1155,6 @@
           return true;
         }
 
-        // Send Ctrl+D exactly once to catch MicroPython on boot if it's not
-        // already running, then only ever send Ctrl+C after that. We just
-        // need to detect MicroPython here, not reach a stable prompt --
-        // repeatedly rebooting keeps re-triggering the firmware's own BLE
-        // init crash loop for no benefit.
         logSerial('Sending single soft reboot to catch MicroPython...', 'cmd');
         await writeSerial('\x04');
         await new Promise((r) => setTimeout(r, 300));
@@ -882,7 +1186,6 @@
           }
         }
 
-        // Probe device platform
         incomingBuffer = '';
         try {
           await writeSerial(
@@ -911,10 +1214,10 @@
         }
 
         logSerial(
-          'Safeguard Warning: MicroPython signature prompt not returned. Continuing with caution...',
+          'Safeguard: No MicroPython signature detected. Presenting install/bricked options.',
           'warn'
         );
-        return true;
+        return false;
       }
 
       // ==========================================
@@ -935,18 +1238,12 @@
       async function enterRawRepl() {
         logSerial('Attempting to enter MicroPython Raw REPL mode...', 'cmd');
 
-        // Send Ctrl+D exactly ONCE, before any retries, to stop main.py if
-        // it's currently running. Never send it again inside the loop below
-        // -- doing so on every attempt just keeps restarting main.py, which
-        // re-triggers its BLE init crash/reboot every single time and we
-        // never get a stable window to grab Raw REPL in.
         incomingBuffer = '';
         await writeSerial('\x04');
         await new Promise((r) => setTimeout(r, 300));
         _logBufferSnapshot('initial Ctrl+D');
 
         for (let attempt = 1; attempt <= 10; attempt++) {
-          // Bail out early if the port died mid-loop (writeSerial nulls it on hard failure)
           if (!port) {
             logSerial(
               'enterRawRepl: port is no longer connected, aborting retry loop.',
@@ -960,12 +1257,6 @@
             'warn'
           );
 
-          // Send Ctrl+C repeatedly, checking the buffer after EACH byte
-          // instead of blasting a full burst then checking afterward. The
-          // firmware's own BLE-init crash can trigger a self-reboot on its
-          // own (independent of anything we send) within ~1-2s, which can
-          // wipe out the ">>> " prompt before a blind post-burst check ever
-          // sees it. The moment we see the prompt, fire Ctrl+A immediately.
           let gotPrompt = false;
           for (let i = 0; i < 10 && !gotPrompt; i++) {
             await writeSerial('\x03');
@@ -976,16 +1267,10 @@
             ) {
               gotPrompt = true;
             }
-            // If the watch crashes/reboots on its own mid-burst, main.py
-            // will restart itself with no help from us -- just keep sending
-            // Ctrl+C, don't add our own Ctrl+D on top of it.
           }
           _logBufferSnapshot(`attempt ${attempt} - after Ctrl+C burst`);
 
           if (gotPrompt) {
-            // Fire Ctrl+A immediately -- don't clear the buffer or wait,
-            // every extra ms here is time the crash-reboot can use to wipe
-            // the prompt out from under us.
             await writeSerial('\x01');
           } else {
             incomingBuffer = '';
@@ -1004,9 +1289,6 @@
               );
               return true;
             }
-            // If the firmware's BLE-init crash/reboot fires while we're
-            // waiting, no point burning the rest of this attempt's timeout
-            // -- bail immediately so the next attempt starts sooner.
             if (
               incomingBuffer.includes('Guru Meditation Error') ||
               incomingBuffer.includes('ESP-ROM:')
@@ -1034,9 +1316,9 @@
       async function exitRawRepl() {
         logSerial('Exiting Raw REPL and soft-resetting watch...', 'cmd');
         try {
-          await writeSerial('\x02'); // Ctrl+B (Exit Raw REPL)
+          await writeSerial('\x02');
           await new Promise((r) => setTimeout(r, 100));
-          await writeSerial('\x04'); // Ctrl+D (Soft Reboot)
+          await writeSerial('\x04');
           logSerial('Watch rebooted into updated firmware!', 'success');
         } catch (err) {
           logSerial(`Error during exitRawRepl: ${err.message}`, 'warn');
@@ -1054,26 +1336,13 @@
               const err = incomingBuffer.split('OK')[1] || incomingBuffer;
               throw new Error(`MicroPython Error: ${err.trim()}`);
             }
-            // Raw REPL always finishes a response with \x04\x04> (end of
-            // stdout, end of stderr, next prompt). Waiting for that full
-            // marker -- not just the leading "OK" -- before returning
-            // ensures the device has genuinely finished transmitting before
-            // we fire the next write. Firing the next command while the
-            // device's own TX of the previous response is still trailing
-            // off looks like exactly what's causing the recurring
-            // AbortError after 2-3 commands in a row.
             const okIdx = incomingBuffer.indexOf('OK');
-            const afterOk = incomingBuffer.slice(okIdx + 2); // past "OK"
+            const afterOk = incomingBuffer.slice(okIdx + 2);
             const eotCount = (afterOk.match(/\x04/g) || []).length;
             if (eotCount >= 2) {
-              // Small settle delay on top of the marker, giving the
-              // device's UART/USB stack a moment to fully quiesce.
               await new Promise((r) => setTimeout(r, 25));
               return incomingBuffer;
             }
-            // Saw "OK" but not yet both trailing \x04 markers -- keep
-            // waiting a bit longer in this same loop instead of returning
-            // early.
           }
           await new Promise((r) => setTimeout(r, 30));
         }
@@ -1118,31 +1387,27 @@
         logSerial('=== Starting ClockStar v2 Installation ===', 'cmd');
 
         try {
-          // Step 1: Switch watch to Raw REPL
           await enterRawRepl();
 
-          // Step 2: Ensure directories exist
-          logSerial('Preparing target directories on watch...', 'cmd');
+          logSerial(
+            'Preparing target directories on watch (icons/, Clockstar_v2/)...',
+            'cmd'
+          );
           await execRawReplCommand(
-            "import os, ubinascii\ntry:\n os.mkdir('icons')\nexcept:\n pass\n"
+            "import os, ubinascii\ntry:\n os.mkdir('icons')\nexcept:\n pass\ntry:\n os.mkdir('Clockstar_v2')\nexcept:\n pass\n"
           );
 
           const total = INSTALL_FILES.length;
           let completed = 0;
           const startTime = Date.now();
 
-          // Step 3: Flash each file
           for (let item of INSTALL_FILES) {
-            const fileName = typeof item === 'string' ? item : item.name;
+            const repoPath = item.repoPath;
+            const destPath = item.destPath;
 
             updateProgress(completed, total, 'Installing...', startTime);
 
-            // settings.json holds the user's saved preferences (idle
-            // timeout, tilt-to-wake). If it already exists on the watch,
-            // skip re-flashing it so a reinstall doesn't wipe out settings
-            // the user has already configured. A fresh watch with no
-            // settings.json yet still gets the default one from the repo.
-            if (fileName === 'settings.json') {
+            if (destPath === 'settings.json') {
               let alreadyExists = false;
               try {
                 const statResult = await execRawReplCommand(
@@ -1167,43 +1432,37 @@
               }
             }
 
-            const cdnUrl = REPO_BASE + fileName;
-            logSerial(`Fetching ${fileName} from CDN...`, 'info');
+            // Cache-bust query param defeats the browser's own HTTP cache
+            // on top of switching away from jsDelivr's CDN cache.
+            const cdnUrl = REPO_BASE + repoPath + '?t=' + Date.now();
+            logSerial(`Fetching ${repoPath} from GitHub (raw)...`, 'info');
 
-            const res = await fetch(cdnUrl);
+            const res = await fetch(cdnUrl, { cache: 'no-store' });
             if (!res.ok)
-              throw new Error(`HTTP ${res.status} fetching ${fileName}`);
+              throw new Error(`HTTP ${res.status} fetching ${repoPath}`);
 
             let fileData;
-
             if (
-              fileName.endsWith('.py') ||
-              fileName.endsWith('.json') ||
-              fileName.endsWith('.txt')
+              destPath.endsWith('.py') ||
+              destPath.endsWith('.json') ||
+              destPath.endsWith('.txt')
             ) {
-              // Plain text source -- always flashed as-is, no .mpy
-              // compilation. Keeping raw .py means normal Python tracebacks
-              // (with real line numbers) on-device instead of opaque .mpy
-              // bytecode errors, which matters a lot for debugging this
-              // firmware.
               const sourceText = await res.text();
               fileData = new TextEncoder().encode(sourceText);
               logSerial(
-                `Transferring ${fileName} (${fileData.length} bytes, plain text)...`,
+                `Transferring ${destPath} (${fileData.length} bytes, plain text)...`,
                 'info'
               );
             } else {
-              // Binary asset file (.spr sprites, etc.)
               const arrayBuffer = await res.arrayBuffer();
               fileData = new Uint8Array(arrayBuffer);
               logSerial(
-                `Transferring ${fileName} (${fileData.length} bytes)...`,
+                `Transferring ${destPath} (${fileData.length} bytes)...`,
                 'info'
               );
             }
 
-            // Write file to watch via Base64 chunking
-            await writeFileToWatch(fileName, fileData);
+            await writeFileToWatch(destPath, fileData);
 
             completed++;
             updateProgress(completed, total, 'Installing...', startTime);
@@ -1212,10 +1471,6 @@
           logSerial('=== All files flashed successfully! ===', 'success');
           updateProgress(total, total, 'Installation Complete!', startTime);
 
-          // Step 4: Reboot Watch and capture what it prints, so we can
-          // confirm on the spot whether the install actually worked
-          // (normal boot log) or crashed (traceback), instead of the user
-          // having to unplug/replug or open a separate serial monitor.
           logSerial('=== Rebooting watch to verify install ===', 'cmd');
           incomingBuffer = '';
           await exitRawRepl();
@@ -1287,7 +1542,6 @@
       }
 
       async function writeFileToWatch(filename, uint8Data) {
-        // Open file for binary writing
         await execRawReplCommand(`f = open('${filename}', 'wb')`);
 
         const chunkSize = 256;
@@ -1299,18 +1553,11 @@
           }
           const b64 = btoa(binaryString);
 
-          // Write base64 chunk
           await execRawReplCommand(`f.write(ubinascii.a2b_base64('${b64}'))`);
 
-          // Small breather between chunks -- this dense back-to-back
-          // write/read cycle over Raw REPL seems to be what triggers
-          // occasional AbortErrors on this device's native USB-CDC driver
-          // under sustained load. writeSerial already retries transient
-          // failures, but easing the pace reduces how often it needs to.
           await new Promise((r) => setTimeout(r, 40));
         }
 
-        // Close file
         await execRawReplCommand(`f.close()`);
         logSerial(`Wrote '${filename}' successfully.`, 'success');
       }
@@ -1335,6 +1582,17 @@
           ).innerText = `Speed: ~${estSpeed} KB/s`;
         }
       }
+
+      // Expose functions referenced by inline onclick= handlers.
+      window.handleMainAction = handleMainAction;
+      window.toggleConsole = toggleConsole;
+      window.hideNotification = hideNotification;
+      window.clearLogs = clearLogs;
+      window.sendCtrlC = sendCtrlC;
+      window.rebootWatch = rebootWatch;
+      window.chooseFirmwarePath = chooseFirmwarePath;
+      window.skipMicroPythonFlash = skipMicroPythonFlash;
+      window.flashMicroPython = flashMicroPython;
     </script>
   </body>
 </html>
