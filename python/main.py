@@ -1,4 +1,4 @@
-import timend
+import time
 import json
 import sys
 import machine
