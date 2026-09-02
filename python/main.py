@@ -858,7 +858,6 @@ def _ble_cmd_picker_on_down():
 def _ble_cmd_picker_confirm():
     cmd = _BLE_CMD_LIST[_ble_cmd_picker_selected_idx]
     _ble_control_send(cmd)
-    _exit_ble_cmd_picker()
 
 
 def _ble_control_send(cmd):
