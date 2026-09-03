@@ -725,12 +725,14 @@ _ble_scan_selected_idx = 0
 # Commands sent from control mode, over the existing UART TX
 # characteristic to whatever is connected (PC/website via Web Bluetooth).
 # No protocol changes needed -- send_line() already does the right thing.
-BLE_CMD_SOLVE = "solve"
+BLE_CMD_SOLVE = "solve""
+BLE_CMD_KILL = "KILLL"
 BLE_CMD_SCRAMBLE = "scramble"
 BLE_CMD_MOVE1 = "move1"
 BLE_CMD_MOVE2 = "move2"
 BLE_CMD_MOVE3 = "move3"
-_BLE_CMD_LIST = (BLE_CMD_SOLVE, BLE_CMD_SCRAMBLE, BLE_CMD_MOVE1, BLE_CMD_MOVE2, BLE_CMD_MOVE3)
+BLE_CMD_MOVE4 = "Middle
+_BLE_CMD_LIST = (BLE_CMD_KILL, BLE_CMD_SOLVE, BLE_CMD_SCRAMBLE, BLE_CMD_MOVE1, BLE_CMD_MOVE2, BLE_CMD_MOVE3,BLE_CMD_MOVE4)
 
 _ble_control_last_cmd = ""
 _ble_control_last_cmd_at = 0
