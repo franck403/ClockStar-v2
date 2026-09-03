@@ -61,24 +61,38 @@ def draw_background():
 # ---------------------------------------------------------------------------
 # Control mode replaces the normal clock face while a command session is
 # active over BLE, so it gets its own background instead of clock_bg.spr:
-# a plain dark-grey fill (no sprite file dependency, no blit_file() heap
-# churn) plus a thin border, just enough to visually distinguish "you are
-# in BLE control mode" from the regular clock screen at a glance. Falls
-# back to a flat black fill if the display has no fill_rect (shouldn't
-# happen on this BSP, but mirrors the HAVE_BG guard pattern above).
+# control_bg.spr, loaded with the exact same peek_size/HAVE_*/blit_file
+# pattern as BG_SPRITE_PATH/clock_bg.spr above, so control mode is
+# visually distinct from the regular clock screen at a glance. Falls
+# back to a flat fill + thin border if control_bg.spr is missing
+# on-device (mirrors the HAVE_BG guard pattern above).
 ALT_BG_COLOR = Color.Black
 ALT_BG_BORDER_COLOR = Color.White
 ALT_BG_BORDER_MARGIN = 3
+
+CONTROL_BG_SPRITE_PATH = "control_bg.spr"
+HAVE_CONTROL_BG = False
+_CONTROL_BG_W = _CONTROL_BG_H = 0
+if hasattr(display, "blit"):
+    try:
+        _CONTROL_BG_W, _CONTROL_BG_H = sprite.peek_size(CONTROL_BG_SPRITE_PATH)
+        HAVE_CONTROL_BG = True
+    except OSError:
+        pass
 
 
 def draw_background_alternative():
     _t0 = time.ticks_ms()
     display.fill(ALT_BG_COLOR)
-    if hasattr(display, "rect"):
+    if HAVE_CONTROL_BG:
+        bg_x = (WIDTH - _CONTROL_BG_W) // 2
+        bg_y = (HEIGHT - _CONTROL_BG_H) // 2
+        sprite.blit_file(display, CONTROL_BG_SPRITE_PATH, bg_x, bg_y)
+    elif hasattr(display, "rect"):
         m = ALT_BG_BORDER_MARGIN
         display.rect(m, m, WIDTH - 2 * m, HEIGHT - 2 * m, ALT_BG_BORDER_COLOR)
     _t1 = time.ticks_ms()
-    print("draw_background_alternative: fill+border=%dms" % time.ticks_diff(_t1, _t0))
+    print("draw_background_alternative: fill+bg=%dms" % time.ticks_diff(_t1, _t0))
 
 
 BATT_ICONS = sprite.IconSet(
