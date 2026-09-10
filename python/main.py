@@ -28,7 +28,6 @@ rtc = cs.rtc
 buttons = cs.buttons
 piezo = cs.piezo
 Color = cs.Display.Color
-print(Color)
 Buttons = cs.Buttons
 
 BG_SPRITE_PATH = "clock_bg.spr"
@@ -72,6 +71,7 @@ ALT_BG_BORDER_MARGIN = 3
 
 CONTROL_BG_SPRITE_PATH = "control_bg.spr"
 HAVE_CONTROL_BG = False
+print(HAVE_CONTROL_BG)
 _CONTROL_BG_W = _CONTROL_BG_H = 0
 if hasattr(display, "blit"):
     try:
@@ -413,6 +413,19 @@ def _open_settings():
     _settings_just_opened_at = time.ticks_ms()
     _mark_dirty()
 
+def _open_settings2():
+    global _screen, _prev_screen, _slide_active, _slide_progress, _settings_just_opened_at
+    if _screen != SCREEN_SETTINGS:
+        _prev_screen = _screen
+    _screen = SCREEN_SETTINGS
+    _settings_reset_nav()
+    _slide_active = False
+    _slide_progress = 0.0
+    _settings_just_opened_at = time.ticks_ms()
+    _exit_ble_control()
+    _mark_dirty()
+
+
 
 def _close_settings():
     global _screen
@@ -745,7 +758,7 @@ BLE_CMD_SCRAMBLE = "scramble"
 BLE_CMD_MOVE1 = "move1"
 BLE_CMD_MOVE2 = "move2"
 BLE_CMD_MOVE3 = "move3"
-BLE_CMD_MOVE4 = "Middle"
+BLE_CMD_MOVE4 = "Rotate"
 _BLE_CMD_LIST = (BLE_CMD_KILL, BLE_CMD_SOLVE, BLE_CMD_SCRAMBLE, BLE_CMD_MOVE1, BLE_CMD_MOVE2, BLE_CMD_MOVE3,BLE_CMD_MOVE4)
 
 _ble_control_last_cmd = ""
@@ -991,11 +1004,6 @@ def _ble_scan_on_down():
 
 
 def draw_ble_control_screen():
-    # Deliberately mirrors draw_clock_screen()'s layout (time + date,
-    # connection badge) but drawn over draw_background_alternative()
-    # instead of the normal clock_bg.spr background, so control mode is
-    # visually distinct from the plain clock face at a glance. UP opens
-    # the command picker (see _on_up_press); DOWN backs out of it.
     draw_background_alternative()
     draw_connection_badge()
 
@@ -1021,11 +1029,10 @@ def draw_ble_control_screen():
         sent_y = date_y + 14 if year is not None else divider_y + 8
         display.text(sent_str, (WIDTH - len(sent_str) * 8) // 2, sent_y, Color.White)
 
-    draw_footer_hint("UP commands BACK exit")
-
 
 def draw_ble_cmd_picker_screen():
     display.fill(Color.Black)
+    draw_background_alternative()
     header_h = draw_header("SEND COMMAND", badge=False)
 
     row_h = 16
@@ -1038,12 +1045,10 @@ def draw_ble_cmd_picker_screen():
             display.text(cmd, 6, y + 1, Color.White)
         y += row_h
 
-    draw_footer_hint("SEL send BACK cancel")
+    draw_footer_hint("           BACK")
 
 
 def main_loop_ble_control_flash_tick():
-    # Called from main_loop() so the "Sent: solve" confirmation clears
-    # itself even with no further button presses.
     if _screen == SCREEN_BLE_CONTROL and _ble_control_last_cmd:
         if time.ticks_diff(time.ticks_ms(), _ble_control_last_cmd_at) >= BLE_CONTROL_CMD_FLASH_MS:
             _mark_dirty()
@@ -1134,7 +1139,7 @@ def _on_back_press():
         _exit_ble_scan()
         return
     if _screen == SCREEN_BLE_CONTROL:
-        _exit_ble_control()
+        backlightF()
         return
     if _screen == SCREEN_BLE_CMD_PICKER:
         _exit_ble_cmd_picker()
@@ -1166,7 +1171,7 @@ def _on_select_press():
     _select_press_woke_dark_screen = bs
     if bs:
         backlightO()
-    elif _screen == SCREEN_CLOCK:
+    elif _screen in (SCREEN_CLOCK, SCREEN_BLE_CONTROL):
         global _slide_active, _slide_progress
         _slide_active = True
         _slide_progress = 0.0
@@ -1265,9 +1270,6 @@ def _poll_battery():
         _batt_level = level
         _mark_dirty()
 
-    # GPIO36 (resolved logical CHARGE pin) reads 1 while charging, 0
-    # when unplugged -- confirmed on-device, opposite of the initial
-    # active-low assumption.
     charging_now = (_charge_pin.value() == 1)
     if charging_now != _charging:
         _charging = charging_now
@@ -1676,10 +1678,6 @@ def backlightO():
 def backlightF():
     global bs
     if _screen == SCREEN_SYNC_LOCK:
-        # Never let the lock screen go dark on idle -- the whole point is
-        # the user sees "sync needed" until they do it; a blanked screen
-        # while locked would look like the watch is off/broken instead of
-        # waiting on them.
         return
     cs.backlight.off()
     bs = True
@@ -1707,14 +1705,17 @@ def _update_active_ui(now, last_sync_anim, last_pedometer_steps):
         _sync_lock_tick_anim()
 
     if (_screen != SCREEN_SYNC_LOCK and _select_held and not _select_press_woke_dark_screen
-            and _slide_active and _screen == SCREEN_CLOCK):
+            and _slide_active and _screen in (SCREEN_CLOCK, SCREEN_BLE_CONTROL)):
         held_ms = time.ticks_diff(now, _select_hold_start)
         _slide_progress = min(1.0, held_ms / SETTINGS_HOLD_MS)
         _mark_dirty()
         if held_ms >= SETTINGS_HOLD_MS:
             _select_held = False
             _slide_active = False
-            _open_settings()
+            if _screen == SCREEN_BLE_CONTROL:
+                _exit_ble_control()
+            else:
+                _open_settings2()
         last_activity = now
 
     if _screen == SCREEN_SETTINGS and _settings_selected_row == SETTINGS_ROW_GYRO and _settings_in_row:
@@ -1758,11 +1759,6 @@ def main_loop():
     GYRO_POLL_OFF_MS = 1000
     BLE_POLL_ON_MS = 150
     BLE_POLL_OFF_MS = 2000
-    # NOTE: SYNC_ANIM_INTERVAL_MS lives at module scope (see the sync-lock
-    # screen state block above), NOT as a local here -- a local of the
-    # same name here previously shadowed it only inside this function,
-    # leaving every other reader (like _update_active_ui) see an
-    # undefined name and crash with NameError.
 
     while True:
         pedometer.poll()
@@ -1817,12 +1813,6 @@ def main_loop():
             link.poll()
             last_pairing_poll = now
 
-        # Delayed sync -> clock screen handoff. See SYNC_TRANSITION_DELAY_MS
-        # note near _on_sync_acquired(): the actual screen switch happens
-        # here, SYNC_TRANSITION_DELAY_MS after set_rtc() first landed, not
-        # the instant it lands -- giving link.poll() a few cycles above to
-        # drain any BLE burst still arriving before the first heavy
-        # blit_file() (clock_bg.spr) of the session fires.
         if (_sync_transition_pending_at is not None
                 and time.ticks_diff(now, _sync_transition_pending_at) >= SYNC_TRANSITION_DELAY_MS):
             _sync_transition_pending_at = None
