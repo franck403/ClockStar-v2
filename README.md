@@ -38,9 +38,7 @@ A browser-based installer (Web Serial API) is available for flashing this firmwa
 ## Known Issues
 
 - **BLE controller crash-reboot loop**: on some resets, native BLE init fails (`BLE_INIT: hci inits failed` / `nimble host init failed`) and the ESP32-S3 panics (`Guru Meditation Error`, heap-related). The firmware currently recovers from this on its own via its automatic reboot, but the underlying cause (heap fragmentation during BLE controller init) is not fully root-caused. A genuine physical USB power cycle is the only fix confirmed to clear it if auto-recovery doesn't kick in — a software `machine.reset()` does not reliably clear it.
-- **BLE MTU is capped at the ~20-byte default** on the official CircuitMess Android app — its Nordic BLE library never calls `requestMtu()`, so any protocol message over ~20 bytes gets silently truncated with no continuation write. This is an app-side limitation, not something the firmware can work around from the peripheral side.
-- Some `Clockstar_v2`/`CircuitOS` BSP internals (e.g. `Display.Color` constructor signature, RTC year-getter API) were reverse-engineered from on-device behavior rather than official docs and may not be fully precise.
-
+- 
 ## Hardware Notes
 
 - `cs.pins.CHARGE` is a **logical** pin index, not a raw GPIO — resolve it via `cs.pins.get(cs.pins.CHARGE)` before passing to `machine.Pin()`. On this rev2 board it maps to GPIO36, which reads **high** while charging.
