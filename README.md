@@ -44,8 +44,8 @@ A browser-based installer (Web Serial API) is available for flashing this firmwa
 - **BLE controller crash-reboot loop**: on some resets, native BLE init fails (`BLE_INIT: hci inits failed` / `nimble host init failed`) and the ESP32-S3 panics (`Guru Meditation Error`, heap-related). The firmware currently recovers from this on its own via its automatic reboot, but the underlying cause (heap fragmentation during BLE controller init) is not fully root-caused. A genuine physical USB power cycle is the only fix confirmed to clear it if auto-recovery doesn't kick in — a software `machine.reset()` does not reliably clear it.
 -  Battery voltage still not working (Official firmware seem to not work too)
 ## Hardware Notes
-- File paths on this device's filesystem must be **relative**, not absolute (`settings.json`, not `/settings.json`) — leading-slash paths fail silently.
-
+- Battery does voltage seems unreadable and official repo doesn't to
+ 
 ## Credits
 
 Protocol details (NUS UUIDs, handshake, command set) reverse-engineered from the public [Clockstar-v2-Firmware](https://github.com/franck403/ClockStar-v2) source. Using IA mostly sorry
