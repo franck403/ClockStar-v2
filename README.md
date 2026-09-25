@@ -6,7 +6,7 @@ Runs on the ClockStar v2's ESP32-S3, 128x128 display.
 
 ## Features
 
-- **Clock, media, pedometer, notifications, and settings screens**, cycled with Up/Down
+- **Clock, media, notifications, and settings screens**, cycled with Up/Down
 - **BLE integration with the stock CircuitMess app** via a from-scratch Nordic UART Service (NUS) implementation — time sync, notifications, call alerts, media control/state, and phone-find, all speaking the same protocol as the original firmware
 - **Battery gauge** using a piecewise LiPo discharge curve (not a naive linear map), with charge detection and a low-battery BLE auto-disconnect (IS STILL HAVING ISSUES WITH IT SORRY)
 - **Settings screen** (hold Back ~1.4s): idle/backlight timeout, tilt-to-wake toggle, live gyro debug readout, detailed battery info — all persisted to `settings.json`
