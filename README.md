@@ -48,4 +48,4 @@ A browser-based installer (Web Serial API) is available for flashing this firmwa
  
 ## Credits
 
-Protocol details (NUS UUIDs, handshake, command set) reverse-engineered from the public [Clockstar-v2-Firmware](https://github.com/franck403/ClockStar-v2) source. Using IA mostly sorry
+Protocol details (NUS UUIDs, handshake, command set) reverse-engineered from the public [Clockstar-v2-Firmware](https://github.com/CircuitMess/Clockstar-v2-Firmware) source. Using IA mostly sorry
