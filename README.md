@@ -13,6 +13,9 @@ Runs on the ClockStar v2's ESP32-S3, 128x128 display.
 - **RTC sync lock screen**: blocks the UI with a "SYNC NEEDED" prompt until the phone app provides a real time over BLE, so the watch never silently runs on a bogus 1900 date
 - **Power management**: dynamic CPU frequency scaling (240MHz active / 60-80MHz idle depending on BLE state), throttled gyro/BLE/input polling while the screen is off
 
+## Some info
+- ** The battery was tested to survive about 11h MAX** There a file that is a .csv containing battery data
+
 ## Repo Layout
 
 ```
