@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>spr:// sprite converter</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1c1f26;
+    --panel-edge: #2a2e38;
+    --grid-a: #1a1d24;
+    --grid-b: #20232b;
+    --ink: #d8dce3;
+    --ink-dim: #767c8a;
+    --accent: #6ee7a8;
+    --accent-dim: #2f5a44;
+    --warn: #e2a03d;
+    --err: #e2603d;
+    --mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  .titlebar {
+    border-bottom: 1px solid var(--panel-edge);
+    padding: 10px 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    background: linear-gradient(180deg, #181a20, #14161a);
+  }
+  .titlebar .glyph {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .titlebar .path {
+    color: var(--ink-dim);
+    font-size: 12px;
+  }
+  .titlebar .spacer { flex: 1; }
+  .titlebar .cap {
+    color: var(--ink-dim);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 300px 1fr 300px;
+    gap: 1px;
+    background: var(--panel-edge);
+    min-height: calc(100vh - 41px);
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    padding: 16px;
+  }
+
+  .section-label {
+    color: var(--ink-dim);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .section-label::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    background: var(--accent);
+  }
+  .section-label + .section-label { margin-top: 20px; }
+
+  .drop {
+    border: 1px dashed var(--panel-edge);
+    padding: 22px 12px;
+    text-align: center;
+    color: var(--ink-dim);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .drop:hover, .drop.drag {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+  .drop .big { font-size: 20px; display: block; margin-bottom: 6px; }
+  input[type=file] { display: none; }
+
+  .field {
+    margin-bottom: 14px;
+  }
+  .field label {
+    display: block;
+    color: var(--ink-dim);
+    font-size: 11px;
+    margin-bottom: 5px;
+  }
+  .field input[type=number] {
+    width: 64px;
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    color: var(--ink);
+    font-family: var(--mono);
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+  .field input[type=number]:focus {
+    outline: 1px solid var(--accent);
+  }
+
+  .dim-lock {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dim-lock button {
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .dim-lock button.active {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
+
+  select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    color: var(--ink);
+    font-family: var(--mono);
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .btn {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 10px 12px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .btn.primary {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .btn.primary:hover:not(:disabled) {
+    background: var(--accent);
+    color: #0c1410;
+  }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { flex: 1; }
+
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 24px;
+    gap: 14px;
+  }
+
+  .canvas-wrap {
+    position: relative;
+    background:
+      linear-gradient(45deg, var(--grid-a) 25%, transparent 25%),
+      linear-gradient(-45deg, var(--grid-a) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--grid-a) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--grid-a) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    background-color: var(--grid-b);
+    border: 1px solid var(--panel-edge);
+    image-rendering: pixelated;
+    line-height: 0;
+  }
+  #previewCanvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+  }
+
+  .stage-meta {
+    display: flex;
+    gap: 18px;
+    color: var(--ink-dim);
+    font-size: 11.5px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stage-meta b { color: var(--ink); font-weight: 600; }
+  .stage-meta .err { color: var(--err); }
+
+  .empty-state {
+    color: var(--ink-dim);
+    text-align: center;
+    padding: 60px 20px;
+    font-size: 12.5px;
+  }
+  .empty-state .glyph {
+    font-size: 30px;
+    color: var(--panel-edge);
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  .hexdump {
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    padding: 10px;
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    max-height: 140px;
+    overflow-y: auto;
+    white-space: pre;
+    margin-top: 6px;
+  }
+  .hexdump::-webkit-scrollbar { width: 8px; }
+  .hexdump::-webkit-scrollbar-thumb { background: var(--panel-edge); }
+
+  .kv {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    font-size: 11.5px;
+    color: var(--ink-dim);
+  }
+  .kv b { color: var(--ink); font-weight: 500; }
+
+  .filename-field .row {
+    display: flex;
+    align-items: center;
+  }
+  .filename-field input[type=text] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    color: var(--ink);
+    font-family: var(--mono);
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .filename-field .ext {
+    color: var(--ink-dim);
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    border-left: none;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .checkrow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .key-detail {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .key-detail input[type=color] {
+    width: 36px; height: 28px;
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    padding: 0;
+    cursor: pointer;
+  }
+  .key-detail span {
+    color: var(--ink-dim);
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <span class="glyph">&#9670;</span>
+  <span>spr:// sprite converter</span>
+  <span class="path">&mdash; image to RGB565 raw, for Clockstar sprite.py</span>
+  <span class="spacer"></span>
+  <span class="cap">max 128&times;128</span>
+</div>
+
+<div class="layout">
+
+  <!-- LEFT: source + sizing -->
+  <div class="panel">
+    <p class="section-label">source</p>
+    <div class="drop" id="drop">
+      <span class="big">&#8659;</span>
+      drop image, or click to browse
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+
+    <p class="section-label">size</p>
+    <div class="field">
+      <label>output size (px, capped at 128)</label>
+      <div class="dim-lock">
+        <input type="number" id="outW" min="1" max="128" value="32" style="flex:1">
+        <button id="lockBtn" class="active" title="keep aspect ratio">&#128279;</button>
+        <input type="number" id="outH" min="1" max="128" value="32" style="flex:1">
+      </div>
+    </div>
+    <div class="field">
+      <label>quick sizes</label>
+      <div class="btn-row">
+        <button class="btn" data-size="16">16</button>
+        <button class="btn" data-size="32">32</button>
+        <button class="btn" data-size="64">64</button>
+        <button class="btn" data-size="128">128</button>
+      </div>
+    </div>
+
+    <p class="section-label">pixel art</p>
+    <div class="field">
+      <label>palette</label>
+      <select id="paletteSel">
+        <option value="none">none (full RGB565)</option>
+        <option value="gb4">4-tone (game boy green)</option>
+        <option value="mono2">2-tone (mono / 1-bit look)</option>
+        <option value="c16">16-color (pico-8 style)</option>
+      </select>
+    </div>
+    <div class="field">
+      <div class="checkrow" style="margin-bottom:0;">
+        <span>dither</span>
+        <input type="checkbox" id="ditherChk" checked>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER: preview -->
+  <div class="panel stage">
+    <div id="stageEmpty" class="empty-state">
+      <span class="glyph">&#9638;</span>
+      no image loaded &mdash; drop one on the left
+    </div>
+    <div class="canvas-wrap" id="canvasWrap" style="display:none;">
+      <canvas id="previewCanvas"></canvas>
+    </div>
+    <div class="stage-meta" id="stageMeta" style="display:none;"></div>
+  </div>
+
+  <!-- RIGHT: export -->
+  <div class="panel">
+    <p class="section-label">key color (transparency)</p>
+    <div class="field">
+      <div class="checkrow">
+        <span>enable key color</span>
+        <input type="checkbox" id="keyChk">
+      </div>
+      <div class="key-detail" id="keyRow" style="display:none;">
+        <input type="color" id="keyColor" value="#ff00ff">
+        <span>pixels matching this become the key color exactly &mdash; pair with <code>blit(..., key)</code> in sprite.py</span>
+      </div>
+    </div>
+
+    <p class="section-label">export</p>
+    <div class="field">
+      <label>bake-in darken (0 = unchanged, 1 = black)</label>
+      <div class="row" style="display:flex; align-items:center; gap:8px;">
+        <input type="range" id="darkenSlider" min="0" max="100" value="0" style="flex:1;">
+        <span class="ext" id="darkenVal" style="border-left:1px solid var(--panel-edge); min-width:3.2em; text-align:center;">0%</span>
+      </div>
+      <span style="color: var(--ink-dim); font-size: 11px;">applied once here, baked into the exported pixels &mdash; no runtime cost on-device (vs. sprite.py's darken= param, which recomputes every blit)</span>
+    </div>
+    <div class="field filename-field">
+      <label>filename</label>
+      <div class="row">
+        <input type="text" id="filenameInput" value="sprite">
+        <span class="ext">.spr</span>
+      </div>
+    </div>
+
+    <div class="field kv" id="exportInfo">
+      <span>format</span><b>RGB565, row-major</b>
+      <span>header</span><b>4 bytes (w,h u16 LE)</b>
+      <span>dimensions</span><b id="infoDim">&mdash;</b>
+      <span>data size</span><b id="infoDataSize">&mdash;</b>
+      <span>file size</span><b id="infoFileSize">&mdash;</b>
+    </div>
+
+    <button class="btn primary" id="exportBtn" disabled>&#8595; export .spr</button>
+    <div style="height:8px;"></div>
+    <button class="btn" id="hexToggleBtn" disabled>toggle hex preview</button>
+    <div class="hexdump" id="hexdump" style="display:none;"></div>
+
+    <p class="section-label">sprite.py header check</p>
+    <div class="field kv">
+      <span>reads via</span><b>peek_size() / blit_file()</b>
+      <span>pixel fmt</span><b>framebuf.RGB565</b>
+      <span>cap enforced</span><b id="capCheck">128&times;128 &mdash; ok</b>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(() => {
+  const MAX_DIM = 128;
+
+  const state = {
+    img: null,
+    srcW: 0, srcH: 0,
+    rgb565: null,
+    outW: 32, outH: 32,
+  };
+
+  const PALETTES = {
+    none: null,
+    gb4: [
+      [15, 56, 15], [48, 98, 48], [139, 172, 15], [155, 188, 15]
+    ],
+    mono2: [
+      [10, 10, 10], [230, 230, 230]
+    ],
+    c16: [
+      [0,0,0],[29,43,83],[126,37,83],[0,135,81],
+      [171,82,54],[95,87,79],[194,195,199],[255,241,232],
+      [255,0,77],[255,163,0],[255,236,39],[0,228,54],
+      [41,173,255],[131,118,156],[255,119,168],[255,204,170]
+    ],
+  };
+
+  const el = id => document.getElementById(id);
+  const dropEl = el('drop');
+  const fileInput = el('fileInput');
+  const outWInput = el('outW');
+  const outHInput = el('outH');
+  const lockBtn = el('lockBtn');
+  const paletteSel = el('paletteSel');
+  const ditherChk = el('ditherChk');
+  const keyChk = el('keyChk');
+  const keyRow = el('keyRow');
+  const keyColor = el('keyColor');
+  const filenameInput = el('filenameInput');
+  const darkenSlider = el('darkenSlider');
+  const darkenVal = el('darkenVal');
+  const exportBtn = el('exportBtn');
+  const hexToggleBtn = el('hexToggleBtn');
+  const hexdump = el('hexdump');
+  const canvasWrap = el('canvasWrap');
+  const stageEmpty = el('stageEmpty');
+  const stageMeta = el('stageMeta');
+  const previewCanvas = el('previewCanvas');
+  const infoDim = el('infoDim');
+  const infoDataSize = el('infoDataSize');
+  const infoFileSize = el('infoFileSize');
+  const capCheck = el('capCheck');
+
+  let lockAspect = true;
+
+  dropEl.addEventListener('click', () => fileInput.click());
+  dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag'); });
+  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+  dropEl.addEventListener('drop', e => {
+    e.preventDefault();
+    dropEl.classList.remove('drag');
+    if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) loadFile(fileInput.files[0]);
+  });
+
+  function loadFile(file) {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        state.img = img;
+        state.srcW = img.naturalWidth;
+        state.srcH = img.naturalHeight;
+        const aspect = img.naturalWidth / img.naturalHeight;
+        const longSide = clampDim(Math.max(img.naturalWidth, img.naturalHeight) > 128 ? 128 : Math.max(img.naturalWidth, img.naturalHeight));
+        let w, h;
+        if (aspect >= 1) { w = longSide; h = clampDim(Math.round(longSide / aspect)); }
+        else { h = longSide; w = clampDim(Math.round(longSide * aspect)); }
+        outWInput.value = w;
+        outHInput.value = h;
+        state.outW = w; state.outH = h;
+        render();
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clampDim(v) {
+    v = Math.round(v);
+    if (v < 1) v = 1;
+    if (v > MAX_DIM) v = MAX_DIM;
+    return v;
+  }
+
+  lockBtn.addEventListener('click', () => {
+    lockAspect = !lockAspect;
+    lockBtn.classList.toggle('active', lockAspect);
+  });
+
+  function onDimChange(changed) {
+    let w = clampDim(parseInt(outWInput.value) || 1);
+    let h = clampDim(parseInt(outHInput.value) || 1);
+    if (lockAspect && state.img) {
+      const aspect = state.srcW / state.srcH;
+      if (changed === 'w') h = clampDim(Math.round(w / aspect));
+      else w = clampDim(Math.round(h * aspect));
+    }
+    outWInput.value = w;
+    outHInput.value = h;
+    state.outW = w; state.outH = h;
+    render();
+  }
+  outWInput.addEventListener('input', () => onDimChange('w'));
+  outHInput.addEventListener('input', () => onDimChange('h'));
+
+  document.querySelectorAll('[data-size]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const size = parseInt(btn.dataset.size);
+      if (!state.img) return;
+      if (state.srcW >= state.srcH) {
+        outWInput.value = size;
+        onDimChange('w');
+      } else {
+        outHInput.value = size;
+        onDimChange('h');
+      }
+    });
+  });
+
+  paletteSel.addEventListener('change', render);
+  ditherChk.addEventListener('change', render);
+  keyChk.addEventListener('change', () => {
+    keyRow.style.display = keyChk.checked ? 'flex' : 'none';
+    render();
+  });
+  keyColor.addEventListener('input', render);
+  darkenSlider.addEventListener('input', () => {
+    darkenVal.textContent = darkenSlider.value + '%';
+    render();
+  });
+
+  function to565(r, g, b) {
+    const r5 = (r >> 3) & 0x1F;
+    const g6 = (g >> 2) & 0x3F;
+    const b5 = (b >> 3) & 0x1F;
+    return (r5 << 11) | (g6 << 5) | b5;
+  }
+  function from565(v) {
+    const r5 = (v >> 11) & 0x1F, g6 = (v >> 5) & 0x3F, b5 = v & 0x1F;
+    return [(r5 * 255 / 31) | 0, (g6 * 255 / 63) | 0, (b5 * 255 / 31) | 0];
+  }
+  function nearestPaletteColor(r, g, b, palette) {
+    let best = 0, bestDist = Infinity;
+    for (let i = 0; i < palette.length; i++) {
+      const [pr, pg, pb] = palette[i];
+      const dr = r - pr, dg = g - pg, db = b - pb;
+      const d = dr*dr + dg*dg + db*db;
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    return palette[best];
+  }
+
+  function clamp8(v) { return v < 0 ? 0 : v > 255 ? 255 : v | 0; }
+
+  function diffuseError(work, w, h, x, y, er, eg, eb) {
+    const add = (dx, dy, factor) => {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) return;
+      const i = (ny * w + nx) * 4;
+      work[i]   += er * factor;
+      work[i+1] += eg * factor;
+      work[i+2] += eb * factor;
+    };
+    add(1, 0, 7/16);
+    add(-1, 1, 3/16);
+    add(0, 1, 5/16);
+    add(1, 1, 1/16);
+  }
+
+  function render() {
+    if (!state.img) return;
+
+    const w = state.outW, h = state.outH;
+
+    const off = document.createElement('canvas');
+    off.width = w; off.height = h;
+    const octx = off.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(state.img, 0, 0, w, h);
+    const imgData = octx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    const paletteKey = paletteSel.value;
+    const palette = PALETTES[paletteKey];
+    const dither = ditherChk.checked && palette;
+
+    const work = dither ? new Float32Array(data.length) : null;
+    if (dither) for (let i = 0; i < data.length; i++) work[i] = data[i];
+
+    const rgb565 = new Uint16Array(w * h);
+    const darkenFactor = 1 - (parseInt(darkenSlider.value) / 100);
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        let r, g, b;
+        if (dither) {
+          r = clamp8(work[idx]); g = clamp8(work[idx+1]); b = clamp8(work[idx+2]);
+        } else {
+          r = data[idx]; g = data[idx+1]; b = data[idx+2];
+        }
+
+        let outR = r, outG = g, outB = b;
+        if (palette) {
+          [outR, outG, outB] = nearestPaletteColor(r, g, b, palette);
+          if (dither) {
+            const er = r - outR, eg = g - outG, eb = b - outB;
+            diffuseError(work, w, h, x, y, er, eg, eb);
+          }
+        }
+
+        // Darken applied last, in 8-bit RGB space, before quantizing to
+        // RGB565 -- matches sprite.py's _darken_chunk semantics (scales
+        // toward black) but baked in once here instead of every blit.
+        if (darkenFactor < 1) {
+          outR = clamp8(outR * darkenFactor);
+          outG = clamp8(outG * darkenFactor);
+          outB = clamp8(outB * darkenFactor);
+        }
+
+        rgb565[y * w + x] = to565(outR, outG, outB);
+      }
+    }
+
+    state.rgb565 = rgb565;
+
+    previewCanvas.width = w;
+    previewCanvas.height = h;
+    const pctx = previewCanvas.getContext('2d');
+    const outImgData = pctx.createImageData(w, h);
+    for (let i = 0; i < w * h; i++) {
+      const [r, g, b] = from565(rgb565[i]);
+      outImgData.data[i*4] = r;
+      outImgData.data[i*4+1] = g;
+      outImgData.data[i*4+2] = b;
+      outImgData.data[i*4+3] = 255;
+    }
+    pctx.putImageData(outImgData, 0, 0);
+
+    const displayScale = Math.max(1, Math.floor(240 / Math.max(w, h)));
+    previewCanvas.style.width = (w * displayScale) + 'px';
+    previewCanvas.style.height = (h * displayScale) + 'px';
+
+    stageEmpty.style.display = 'none';
+    canvasWrap.style.display = 'block';
+    stageMeta.style.display = 'flex';
+
+    const dataBytes = w * h * 2;
+    const fileBytes = dataBytes + 4;
+    stageMeta.innerHTML =
+      '<span><b>' + w + '&times;' + h + '</b> px</span>' +
+      '<span><b>' + dataBytes + '</b> B pixel data</span>' +
+      '<span><b>' + fileBytes + '</b> B file</span>' +
+      ((w > MAX_DIM || h > MAX_DIM) ? '<span class="err">exceeds 128 cap</span>' : '');
+
+    infoDim.textContent = w + ' \u00d7 ' + h;
+    infoDataSize.textContent = dataBytes + ' bytes';
+    infoFileSize.textContent = fileBytes + ' bytes';
+    capCheck.textContent = (w <= 128 && h <= 128) ? '128\u00d7128 \u2014 ok' : 'EXCEEDS CAP';
+    capCheck.style.color = (w <= 128 && h <= 128) ? 'var(--accent)' : 'var(--err)';
+
+    exportBtn.disabled = false;
+    hexToggleBtn.disabled = false;
+    if (hexdump.style.display !== 'none') renderHexdump();
+  }
+
+  function buildSprFile() {
+    const w = state.outW, h = state.outH;
+    const rgb565 = state.rgb565;
+
+    const buf = new ArrayBuffer(4 + w * h * 2);
+    const view = new DataView(buf);
+    // Header (w, h) stays little-endian -- sprite.py's peek_size() reads
+    // it as header[0] | header[1] << 8, i.e. LE, and that part was never
+    // the problem.
+    view.setUint16(0, w, true);
+    view.setUint16(2, h, true);
+
+    // Pixel data must be BIG-endian: MicroPython's framebuf.RGB565 format
+    // expects the high byte first per pixel. Writing this little-endian
+    // (as an earlier version of this tool did) doesn't scramble the
+    // image -- geometry/position stay correct -- but it swaps each
+    // pixel's high/low byte, which shows up as a consistent color shift
+    // ("looks right but tinted wrong"). This is exactly that bug, fixed.
+    for (let i = 0; i < w * h; i++) {
+      view.setUint16(4 + i * 2, rgb565[i], false);
+    }
+    return buf;
+  }
+
+  exportBtn.addEventListener('click', () => {
+    if (!state.rgb565) return;
+    const buf = buildSprFile();
+    const blob = new Blob([buf], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const name = (filenameInput.value.trim() || 'sprite') + '.spr';
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  hexToggleBtn.addEventListener('click', () => {
+    const showing = hexdump.style.display !== 'none';
+    hexdump.style.display = showing ? 'none' : 'block';
+    if (!showing) renderHexdump();
+  });
+
+  function renderHexdump() {
+    if (!state.rgb565) { hexdump.textContent = ''; return; }
+    const buf = buildSprFile();
+    const bytes = new Uint8Array(buf);
+    const maxRows = 32;
+    let out = '';
+    for (let row = 0; row < Math.min(maxRows, Math.ceil(bytes.length / 16)); row++) {
+      const offset = row * 16;
+      let hex = '';
+      let ascii = '';
+      for (let i = 0; i < 16; i++) {
+        const bi = offset + i;
+        if (bi < bytes.length) {
+          const b = bytes[bi];
+          hex += b.toString(16).padStart(2, '0') + ' ';
+          ascii += (b >= 32 && b < 127) ? String.fromCharCode(b) : '.';
+        } else {
+          hex += '   ';
+        }
+      }
+      out += offset.toString(16).padStart(6, '0') + '  ' + hex + ' ' + ascii + '\n';
+    }
+    if (bytes.length > maxRows * 16) {
+      out += '... (' + (bytes.length - maxRows * 16) + ' more bytes)\n';
+    }
+    hexdump.textContent = out;
+  }
+})();
+</script>
+
+</body>
+</html>
