@@ -14,8 +14,8 @@ Runs on the ClockStar v2's ESP32-S3, 128x128 display.
 - **Power management**: dynamic CPU frequency scaling (240MHz active / 60-80MHz idle depending on BLE state), throttled gyro/BLE/input polling while the screen is off
 
 ## Some info
-- ** The battery was tested to survive about 11h MAX** There a file that is a .csv containing battery data
-- ** I RECOMMAND that you install micropython 1.29.0 as it remove most off the issues** will be added later on the site when I fix my watch (power button broke :) )
+- **The battery was tested to survive about 11h MAX** There a file that is a .csv containing battery data
+- **I RECOMMEND that you install micropython 1.29.0 as it remove most off the issues** will be added later on the site when I fix my watch (power button broke :) )
  
 ## Repo Layout
 
