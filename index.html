@@ -1639,6 +1639,35 @@
           logSerial('=== All files flashed successfully! ===', 'success');
           updateProgress(total, total, 'Installation Complete!', startTime);
 
+          // Give the watch RTC (BM8563 @ 0x51 on I2C0, SDA=4 SCL=5) this
+          // computer's local time, so the watch boots with a valid date and
+          // skips the "SYNC NEEDED" lock screen. Same register layout as
+          // Clockstar_v2/rtc_mini.py set_time(). Non-fatal if it fails.
+          logSerial("Setting the watch clock from this computer's time...", 'cmd');
+          try {
+            const now = new Date();
+            const yr = Math.min(2099, Math.max(2000, now.getFullYear()));
+            const rtcOut = await execRawReplCommand(
+              'from machine import I2C, Pin\n' +
+                'i2c = I2C(0, sda=Pin(4), scl=Pin(5))\n' +
+                'def _b(d):\n return ((d // 10) << 4) | (d % 10)\n' +
+                'i2c.writeto(0x51, bytearray([0, 0, 0]))\n' +
+                `i2c.writeto(0x51, bytearray([2, _b(${now.getSeconds()}) & 0x7F, _b(${now.getMinutes()}) & 0x7F, _b(${now.getHours()}) & 0x3F, _b(${now.getDate()}) & 0x3F, 0, (_b(${now.getMonth() + 1}) & 0x1F) | 0x80, _b(${yr % 100})]))\n` +
+                "i2c.writeto(0x51, b'\\x02')\n" +
+                "print('RTC_SET', list(i2c.readfrom(0x51, 7)))\n"
+            );
+            if (rtcOut.includes('RTC_SET')) {
+              logSerial(
+                `Watch clock set to ${now.toLocaleString()}.`,
+                'success'
+              );
+            } else {
+              logSerial('Watch clock write gave no confirmation: ' + rtcOut, 'warn');
+            }
+          } catch (e) {
+            logSerial(`Couldn't set the watch clock: ${e.message}`, 'warn');
+          }
+
           logSerial('=== Rebooting watch to verify install ===', 'cmd');
           incomingBuffer = '';
           await exitRawRepl();
