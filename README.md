@@ -7,6 +7,8 @@ Runs on the ClockStar v2's ESP32-S3, 128x128 display.
 ## Features
 
 - **Clock, media, notifications, and settings screens**, cycled with Up/Down
+- **Faster install**: an optional speed test before flashing finds the fastest packet size that transfers error-free (checksum-verified on the watch)
+- **Extensions any time**: extensions can be installed on their own later, without reflashing the firmware
 - **Clock set at install**: the web installer writes this computer's local time to the watch RTC, so no "SYNC NEEDED" screen after flashing
 - **Screen API + extensions**: add a screen in one function (`screens.py`), and install optional extensions (pedometer, metronome, ...) from the web installer
 - **BLE integration with the stock CircuitMess app** via a from-scratch Nordic UART Service (NUS) implementation — time sync, notifications, call alerts, media control/state, and phone-find, all speaking the same protocol as the original firmware

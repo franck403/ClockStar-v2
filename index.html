@@ -324,6 +324,34 @@
         </div>
       </div>
 
+      <!-- Transfer speed -->
+      <div
+        class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg"
+      >
+        <label class="flex items-start space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            id="speedTestToggle"
+            checked
+            class="mt-1 accent-cyan-500"
+          />
+          <div>
+            <div class="font-medium text-slate-200">
+              Speed test before install
+            </div>
+            <div class="text-xs text-slate-400 leading-relaxed">
+              Sends a few KB to the watch with growing packet sizes, checks them
+              on the watch, and uses the fastest size that stays error-free.
+              Takes about 10 seconds and makes the install faster.
+            </div>
+            <div
+              id="speedTestResult"
+              class="text-xs text-cyan-400 font-mono mt-1"
+            ></div>
+          </div>
+        </label>
+      </div>
+
       <!-- Extensions -->
       <div
         class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3 shadow-lg"
@@ -336,8 +364,10 @@
           <i data-lucide="puzzle" class="w-5 h-5 text-slate-500"></i>
         </div>
         <p class="text-xs text-slate-400 leading-relaxed">
-          Optional add-ons installed together with the firmware. Only checked
-          extensions are loaded by the watch (the list is stored in
+          Optional add-ons. They are installed together with the firmware, or
+          on their own at any time with the button below (no need to reinstall
+          everything). Only checked extensions are loaded by the watch (the
+          list is stored in
           <code
             class="bg-slate-950 text-slate-300 px-1.5 py-0.5 rounded border border-slate-800 text-xs font-mono"
             >extensions.json</code
@@ -346,6 +376,20 @@
         <div id="extensionList" class="space-y-2 text-sm text-slate-300">
           Loading extensions...
         </div>
+        <button
+          id="installExtBtn"
+          onclick="startExtensionInstall()"
+          class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-sm font-medium transition-all flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <i data-lucide="puzzle" class="w-4 h-4"></i>
+          <span>Install selected extensions only</span>
+        </button>
+        <p class="text-[11px] text-slate-500 leading-relaxed">
+          Connect the watch first (Connect Watch above). Only the extension
+          files and extensions.json are written, then the watch reboots.
+          Unchecked extensions are switched off (a piezo driver override is
+          restored to the stock one).
+        </p>
       </div>
 
       <!-- Installation Progress Bar -->
@@ -519,6 +563,21 @@
       // (that is how the Metronome swaps in the working piezo driver).
       // The chosen modules are written to extensions.json on the watch,
       // which screens.py loads at boot.
+      // ---- transfer tuning ----
+      // packet = bytes of file data per raw-REPL write command (sent as
+      // base64). writeSlice/sliceDelay pace the USB writes, chunkDelay is the
+      // pause between packets. The speed test picks the fastest profile that
+      // survives a checksummed round trip; profile 0 is the old safe setting.
+      const TRANSFER_PROFILES = [
+        { chunk: 256, writeSlice: 64, sliceDelay: 5, chunkDelay: 40 },
+        { chunk: 512, writeSlice: 128, sliceDelay: 3, chunkDelay: 20 },
+        { chunk: 1024, writeSlice: 256, sliceDelay: 2, chunkDelay: 10 },
+        { chunk: 2048, writeSlice: 512, sliceDelay: 1, chunkDelay: 5 },
+        { chunk: 4096, writeSlice: 1024, sliceDelay: 0, chunkDelay: 0 },
+      ];
+      let transfer = { ...TRANSFER_PROFILES[0] };
+      let bytesSent = 0;
+
       const EXT_STORAGE_KEY = 'clockstar_extensions';
       let extensionManifest = [];
 
@@ -609,10 +668,24 @@
 
       // Core files + selected extension files (extensions override core on
       // the same dest) + a generated extensions.json for the watch.
-      function buildInstallList() {
+      function buildInstallList(mode = 'full') {
         const map = new Map();
-        for (const f of INSTALL_FILES) map.set(f.destPath, f);
         const selected = getSelectedExtensions();
+        if (mode === 'extensions') {
+          // Extension-only install: don't touch core files, except put back
+          // the stock version of any core file an UNselected extension
+          // overrides (e.g. the disabled piezo driver).
+          const picked = new Set(selected.map((e) => e.id));
+          for (const ext of extensionManifest) {
+            if (picked.has(ext.id)) continue;
+            for (const f of ext.files || []) {
+              const core = INSTALL_FILES.find((c) => c.destPath === f.dest);
+              if (core) map.set(f.dest, core);
+            }
+          }
+        } else {
+          for (const f of INSTALL_FILES) map.set(f.destPath, f);
+        }
         for (const ext of selected) {
           for (const f of ext.files || []) {
             map.set(f.dest, { repoPath: f.src, destPath: f.dest });
@@ -801,7 +874,7 @@
         writeLock = writeLock.then(async () => {
           const encoder = new TextEncoder();
           const fullBytes = encoder.encode(data);
-          const WRITE_CHUNK_SIZE = 64;
+          const WRITE_CHUNK_SIZE = transfer.writeSlice;
 
           try {
             const writer = _getPersistentWriter();
@@ -811,8 +884,8 @@
               for (let i = 0; i < fullBytes.length; i += WRITE_CHUNK_SIZE) {
                 const slice = fullBytes.slice(i, i + WRITE_CHUNK_SIZE);
                 await writer.write(slice);
-                if (i + WRITE_CHUNK_SIZE < fullBytes.length) {
-                  await new Promise((r) => setTimeout(r, 5));
+                if (i + WRITE_CHUNK_SIZE < fullBytes.length && transfer.sliceDelay > 0) {
+                  await new Promise((r) => setTimeout(r, transfer.sliceDelay));
                 }
               }
             }
@@ -1507,7 +1580,107 @@
       // ==========================================
       // COMPILER & INSTALLATION RUNNER
       // ==========================================
-      async function startInstallation() {
+      // ==========================================
+      // SPEED TEST
+      // ==========================================
+      const SPEED_VERIFY_CODE =
+        "f = open('_speedtest.bin', 'rb')\n" +
+        'n = 0\ns = 0\n' +
+        'while True:\n b = f.read(512)\n if not b:\n  break\n n += len(b)\n for x in b:\n  s += x\n' +
+        'f.close()\n' +
+        "print('SPEED_OK', n, s)\n";
+
+      async function recoverRawRepl() {
+        incomingBuffer = '';
+        await writeSerial('\x03\x03');
+        await new Promise((r) => setTimeout(r, 300));
+        await writeSerial('\x01');
+        await new Promise((r) => setTimeout(r, 400));
+        await execRawReplCommand('import os, ubinascii\n');
+      }
+
+      async function runSpeedTest() {
+        const resultEl = document.getElementById('speedTestResult');
+        const statusEl = document.getElementById('progressStatusText');
+        const SIZE = 6144;
+        const RUNS = 2;
+        const payload = new Uint8Array(SIZE);
+        let expectedSum = 0;
+        for (let i = 0; i < SIZE; i++) {
+          payload[i] = (i * 31 + 7) & 0xff;
+          expectedSum += payload[i];
+        }
+
+        logSerial(
+          '=== Speed test: looking for the fastest stable packet size ===',
+          'cmd'
+        );
+        let best = null;
+        for (const profile of TRANSFER_PROFILES) {
+          if (statusEl)
+            statusEl.innerText = `Speed test: ${profile.chunk}-byte packets...`;
+          transfer = { ...profile };
+          let totalMs = 0;
+          let ok = true;
+          for (let run = 0; run < RUNS && ok; run++) {
+            try {
+              const t0 = performance.now();
+              await writeFileToWatch('_speedtest.bin', payload, true);
+              totalMs += performance.now() - t0;
+              const out = await execRawReplCommand(SPEED_VERIFY_CODE);
+              if (!out.includes(`SPEED_OK ${SIZE} ${expectedSum}`))
+                throw new Error('checksum mismatch');
+            } catch (e) {
+              ok = false;
+              logSerial(
+                `Speed test: ${profile.chunk}-byte packets failed (${e.message}).`,
+                'warn'
+              );
+            }
+          }
+          if (!ok) {
+            transfer = { ...TRANSFER_PROFILES[0] };
+            try {
+              await recoverRawRepl();
+            } catch (e) {
+              logSerial(`Speed test recovery: ${e.message}`, 'warn');
+            }
+            break;
+          }
+          const kbps = (SIZE * RUNS) / 1024 / (totalMs / 1000);
+          logSerial(
+            `Speed test: ${profile.chunk}-byte packets OK, ~${kbps.toFixed(1)} KB/s`,
+            'success'
+          );
+          if (!best || kbps > best.kbps) best = { profile, kbps };
+        }
+
+        try {
+          await execRawReplCommand(
+            "import os\ntry:\n os.remove('_speedtest.bin')\nexcept OSError:\n pass\n"
+          );
+        } catch (e) {}
+
+        transfer = { ...(best ? best.profile : TRANSFER_PROFILES[0]) };
+        const msg = best
+          ? `Using ${transfer.chunk}-byte packets (~${best.kbps.toFixed(1)} KB/s measured)`
+          : 'Speed test failed, using the safe default (256-byte packets)';
+        logSerial(msg, best ? 'success' : 'warn');
+        if (resultEl) resultEl.innerText = msg;
+      }
+
+      async function startExtensionInstall() {
+        if (!port) {
+          showNotification(
+            'Connect your watch first (Connect Watch above), then install the extensions.',
+            'error'
+          );
+          return;
+        }
+        await startInstallation('extensions');
+      }
+
+      async function startInstallation(mode = 'full') {
         if (!port) {
           showNotification(
             'Connect your watch first, then try installing again.',
@@ -1524,6 +1697,8 @@
         const progressContainer = document.getElementById('progressContainer');
 
         installBtn.disabled = true;
+        const extBtn = document.getElementById('installExtBtn');
+        if (extBtn) extBtn.disabled = true;
         _setMainButton('Installing...', { disabled: true, icon: 'loader-2' });
         _setMainCard(
           'Step 2 of 2',
@@ -1533,7 +1708,12 @@
         );
         progressContainer.classList.remove('hidden');
 
-        logSerial('=== Starting ClockStar v2 Installation ===', 'cmd');
+        logSerial(
+          mode === 'extensions'
+            ? '=== Installing extensions only ==='
+            : '=== Starting ClockStar v2 Installation ===',
+          'cmd'
+        );
 
         try {
           await enterRawRepl();
@@ -1546,7 +1726,13 @@
             "import os, ubinascii\ntry:\n os.mkdir('icons')\nexcept:\n pass\ntry:\n os.mkdir('Clockstar_v2')\nexcept:\n pass\n"
           );
 
-          const installList = buildInstallList();
+          if (document.getElementById('speedTestToggle').checked) {
+            await runSpeedTest();
+          } else {
+            transfer = { ...TRANSFER_PROFILES[0] };
+          }
+
+          const installList = buildInstallList(mode);
           const total = installList.length;
           logSerial(
             'Extensions: ' +
@@ -1555,6 +1741,7 @@
             'info'
           );
           let completed = 0;
+          bytesSent = 0;
           const startTime = Date.now();
 
           for (let item of installList) {
@@ -1643,6 +1830,7 @@
           // computer's local time, so the watch boots with a valid date and
           // skips the "SYNC NEEDED" lock screen. Same register layout as
           // Clockstar_v2/rtc_mini.py set_time(). Non-fatal if it fails.
+          if (mode === 'full') {
           logSerial("Setting the watch clock from this computer's time...", 'cmd');
           try {
             const now = new Date();
@@ -1666,6 +1854,7 @@
             }
           } catch (e) {
             logSerial(`Couldn't set the watch clock: ${e.message}`, 'warn');
+          }
           }
 
           logSerial('=== Rebooting watch to verify install ===', 'cmd');
@@ -1731,6 +1920,7 @@
         } finally {
           isFlashing = false;
           installBtn.disabled = false;
+          if (extBtn) extBtn.disabled = false;
           _setMainButton('Install to Watch', {
             disabled: false,
             icon: 'download-cloud',
@@ -1738,25 +1928,31 @@
         }
       }
 
-      async function writeFileToWatch(filename, uint8Data) {
+      async function writeFileToWatch(filename, uint8Data, quiet = false) {
         await execRawReplCommand(`f = open('${filename}', 'wb')`);
 
-        const chunkSize = 256;
+        const chunkSize = transfer.chunk;
         for (let i = 0; i < uint8Data.length; i += chunkSize) {
-          const chunk = uint8Data.slice(i, i + chunkSize);
+          const chunk = uint8Data.subarray(i, i + chunkSize);
           let binaryString = '';
-          for (let j = 0; j < chunk.length; j++) {
-            binaryString += String.fromCharCode(chunk[j]);
+          for (let j = 0; j < chunk.length; j += 1024) {
+            binaryString += String.fromCharCode.apply(
+              null,
+              chunk.subarray(j, j + 1024)
+            );
           }
           const b64 = btoa(binaryString);
 
           await execRawReplCommand(`f.write(ubinascii.a2b_base64('${b64}'))`);
+          bytesSent += chunk.length;
 
-          await new Promise((r) => setTimeout(r, 40));
+          if (transfer.chunkDelay > 0) {
+            await new Promise((r) => setTimeout(r, transfer.chunkDelay));
+          }
         }
 
         await execRawReplCommand(`f.close()`);
-        logSerial(`Wrote '${filename}' successfully.`, 'success');
+        if (!quiet) logSerial(`Wrote '${filename}' successfully.`, 'success');
       }
 
       function updateProgress(current, total, statusText, startTime) {
@@ -1772,8 +1968,8 @@
         ).innerText = `File ${current}/${total}`;
 
         const elapsedSec = (Date.now() - startTime) / 1000;
-        if (elapsedSec > 0 && current > 0) {
-          const estSpeed = ((current * 3.5) / elapsedSec).toFixed(1);
+        if (elapsedSec > 0 && bytesSent > 0) {
+          const estSpeed = (bytesSent / 1024 / elapsedSec).toFixed(1);
           document.getElementById(
             'transferRateText'
           ).innerText = `Speed: ~${estSpeed} KB/s`;
@@ -1782,6 +1978,7 @@
 
       // Expose functions referenced by inline onclick= handlers.
       window.handleMainAction = handleMainAction;
+      window.startExtensionInstall = startExtensionInstall;
       window.toggleConsole = toggleConsole;
       window.hideNotification = hideNotification;
       window.clearLogs = clearLogs;
