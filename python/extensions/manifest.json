@@ -14,7 +14,7 @@
     {
       "id": "metronome",
       "name": "Metronome",
-      "description": "A metronome in Settings (30 to 240 BPM). It also installs a working buzzer driver in place of the disabled one.",
+      "description": "A metronome (30 to 240 BPM) and a buzzer volume setting, both in Settings. It also installs a working buzzer driver in place of the disabled one.",
       "default": false,
       "module": "ext_metronome",
       "files": [

@@ -3,6 +3,9 @@
 Needs the working piezo driver that ships with this extension
 (Clockstar_v2/piezo_mini.py, installed over the stock disabled one).
 
+Also adds a "Volume" page in Settings (buzzer volume 0-100, UP/DOWN in
+steps of 10, SEL plays a test beep). Volume is stored with the BPM.
+
 Controls: SEL start/stop, UP/DOWN change BPM (+-1, or +-5 when pressed
 quickly in a row), BACK stops and returns to Settings. 4/4 bar with an
 accented first beat.
@@ -21,6 +24,7 @@ FAST_PRESS_MS = 350
 SAVE_PATH = "metronome.json"
 
 _bpm = 100
+_volume = 100
 _running = False
 _next_beat = 0
 _beat = 0          # index of the beat to play next
@@ -30,12 +34,16 @@ _last_press = 0
 
 
 def _load():
-    global _bpm
+    global _bpm, _volume
     try:
         with open(SAVE_PATH, "r") as f:
-            v = json.load(f).get("bpm")
+            data = json.load(f)
+        v = data.get("bpm")
         if isinstance(v, int) and BPM_MIN <= v <= BPM_MAX:
             _bpm = v
+        vol = data.get("volume")
+        if isinstance(vol, int) and 0 <= vol <= 100:
+            _volume = vol
     except (OSError, ValueError):
         pass
 
@@ -43,7 +51,7 @@ def _load():
 def _save():
     try:
         with open(SAVE_PATH, "w") as f:
-            json.dump({"bpm": _bpm}, f)
+            json.dump({"bpm": _bpm, "volume": _volume}, f)
     except OSError as e:
         print("metronome save error:", e)
 
@@ -56,6 +64,8 @@ def register(api):
     ctx = api.ctx
     piezo = ctx.piezo
     _load()
+    if hasattr(piezo, "set_volume"):
+        piezo.set_volume(_volume)
 
     def _click(freq):
         if hasattr(piezo, "start"):
@@ -154,3 +164,39 @@ def register(api):
     api.add_screen("Metronome", draw, on_up=on_up, on_down=on_down,
                    on_select=on_select, background=background,
                    on_exit=on_exit, veille_exempt=True, in_settings=True)
+
+    # ---- buzzer volume page ----
+    def _set_volume(v):
+        global _volume
+        _volume = max(0, min(100, v))
+        if hasattr(piezo, "set_volume"):
+            piezo.set_volume(_volume)
+
+    def vol_up():
+        _set_volume(_volume + 10)
+
+    def vol_down():
+        _set_volume(_volume - 10)
+
+    def vol_select():
+        if hasattr(piezo, "tone"):
+            piezo.tone(FREQ_NORMAL, 120)
+
+    def vol_exit():
+        _save()
+
+    def vol_draw():
+        d = ctx.display
+        C = ctx.Color
+        d.fill(C.Black)
+        header_h = ctx.draw_header("VOLUME", badge=False)
+        s = "%d%%" % _volume
+        ctx.text_2x(s, (ctx.WIDTH - len(s) * 16) // 2, header_h + 18, C.White)
+        ctx.draw_progress_bar(12, header_h + 46, ctx.WIDTH - 24, 10, _volume / 100)
+        note = "Muted" if _volume == 0 else "Buzzer"
+        d.text(note, (ctx.WIDTH - len(note) * 8) // 2, header_h + 64, C.White)
+        ctx.draw_footer_hint("UP/DN vol SEL test")
+
+    api.add_screen("Volume", vol_draw, on_up=vol_up, on_down=vol_down,
+                   on_select=vol_select, on_exit=vol_exit,
+                   veille_exempt=True, in_settings=True, order=101)
