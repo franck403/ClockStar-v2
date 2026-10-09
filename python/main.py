@@ -1620,7 +1620,7 @@ def _init_extensions():
         draw_background=draw_background, draw_header=draw_header,
         draw_footer_hint=draw_footer_hint, draw_progress_bar=draw_progress_bar,
         text_2x=_text_2x, truncate=_truncate, wrap_text=_wrap_text,
-        mark_dirty=_mark_dirty,
+        mark_dirty=_mark_dirty, buttons=buttons, Buttons=Buttons,
     )
     loaded = screens.load_extensions()
     print("extensions loaded:", loaded)

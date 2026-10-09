@@ -3,12 +3,14 @@
 Needs the working piezo driver that ships with this extension
 (Clockstar_v2/piezo_mini.py, installed over the stock disabled one).
 
-Also adds a "Volume" page in Settings (buzzer volume 0-100, UP/DOWN in
-steps of 10, SEL plays a test beep). Volume is stored with the BPM.
-
-Controls: SEL start/stop, UP/DOWN change BPM (+-1, or +-5 when pressed
-quickly in a row), BACK stops and returns to Settings. 4/4 bar with an
+Metronome page: SEL start/stop, UP/DOWN change the BPM, BACK stops and
+returns to Settings. Tap = +-1 (or +-5 when tapped quickly in a row); hold
+UP or DOWN and it keeps going, faster after a moment. 4/4 bar with an
 accented first beat.
+
+Volume page (also in Settings): UP/DOWN change the buzzer volume in steps
+of 10 (hold to keep going), SEL plays a test beep. Volume is stored with
+the BPM in metronome.json.
 """
 
 import time
@@ -20,7 +22,10 @@ BEATS_PER_BAR = 4
 CLICK_MS = 30
 FREQ_ACCENT = 1800
 FREQ_NORMAL = 1200
-FAST_PRESS_MS = 350
+FAST_TAP_MS = 350        # taps closer than this count as "quick" (+-5)
+HOLD_DELAY_MS = 450      # hold this long before auto-repeat starts
+HOLD_INTERVAL_MS = 90    # time between repeats while held
+HOLD_FAST_MS = 1300      # held this long -> bigger steps
 SAVE_PATH = "metronome.json"
 
 _bpm = 100
@@ -30,7 +35,7 @@ _next_beat = 0
 _beat = 0          # index of the beat to play next
 _shown_beat = -1   # beat currently lit on screen (-1 = none)
 _off_at = None
-_last_press = 0
+_last_tap = 0
 
 
 def _load():
@@ -60,6 +65,53 @@ def _period_ms():
     return 60000 // _bpm
 
 
+class _Repeater:
+    """Turns "UP/DOWN pressed" into tap + auto-repeat while held.
+
+    apply(direction, mode): mode 0 = the initial tap, 1 = held, 2 = held a
+    long time (use a bigger step).
+    """
+
+    def __init__(self, ctx, apply):
+        self.ctx = ctx
+        self.apply = apply
+        self.active = False
+        self.dir = 0
+        self.t0 = 0
+        self.last = 0
+
+    def press(self, direction):
+        now = time.ticks_ms()
+        self.dir = direction
+        self.t0 = now
+        self.last = now
+        self.apply(direction, 0)
+
+    def update(self, now):
+        if not self.active or self.dir == 0:
+            return
+        ctx = self.ctx
+        btn = ctx.Buttons.Up if self.dir > 0 else ctx.Buttons.Down
+        if not ctx.buttons.state(btn):
+            self.dir = 0
+            return
+        held = time.ticks_diff(now, self.t0)
+        if held < HOLD_DELAY_MS:
+            return
+        if time.ticks_diff(now, self.last) >= HOLD_INTERVAL_MS:
+            self.last = now
+            self.apply(self.dir, 2 if held >= HOLD_FAST_MS else 1)
+            ctx.mark_dirty()
+
+    def enter(self):
+        self.active = True
+        self.dir = 0
+
+    def leave(self):
+        self.active = False
+        self.dir = 0
+
+
 def register(api):
     ctx = api.ctx
     piezo = ctx.piezo
@@ -67,6 +119,7 @@ def register(api):
     if hasattr(piezo, "set_volume"):
         piezo.set_volume(_volume)
 
+    # ---------------------------------------------------------- metronome
     def _click(freq):
         if hasattr(piezo, "start"):
             piezo.start(freq)
@@ -79,8 +132,23 @@ def register(api):
         if hasattr(piezo, "stop"):
             piezo.stop()
 
+    def _apply_bpm(direction, mode):
+        global _bpm, _last_tap
+        if mode == 0:
+            now = time.ticks_ms()
+            step = 5 if time.ticks_diff(now, _last_tap) < FAST_TAP_MS else 1
+            _last_tap = now
+        elif mode == 1:
+            step = 1
+        else:
+            step = 5
+        _bpm = max(BPM_MIN, min(BPM_MAX, _bpm + direction * step))
+
+    bpm_rep = _Repeater(ctx, _apply_bpm)
+
     def background(now):
         global _next_beat, _beat, _shown_beat, _off_at
+        bpm_rep.update(now)
         if _off_at is not None and time.ticks_diff(now, _off_at) >= 0:
             _silence()
         if not _running:
@@ -97,7 +165,7 @@ def register(api):
             ctx.mark_dirty()
 
     def _start():
-        global _running, _next_beat, _beat, _shown_beat
+        global _running, _beat, _shown_beat, _next_beat
         _running = True
         _beat = 0
         _shown_beat = -1
@@ -115,22 +183,11 @@ def register(api):
         else:
             _start()
 
-    def _change_bpm(direction):
-        global _bpm, _last_press, _next_beat
-        now = time.ticks_ms()
-        step = 5 if time.ticks_diff(now, _last_press) < FAST_PRESS_MS else 1
-        _last_press = now
-        _bpm = max(BPM_MIN, min(BPM_MAX, _bpm + direction * step))
-        if _running:
-            _next_beat = time.ticks_add(now, _period_ms())
-
-    def on_up():
-        _change_bpm(1)
-
-    def on_down():
-        _change_bpm(-1)
+    def on_enter():
+        bpm_rep.enter()
 
     def on_exit():
+        bpm_rep.leave()
         _stop()
         _save()
 
@@ -161,28 +218,35 @@ def register(api):
         d.text(state, (ctx.WIDTH - len(state) * 8) // 2, y + size + 8, C.White)
         ctx.draw_footer_hint("SEL go UP/DN bpm")
 
-    api.add_screen("Metronome", draw, on_up=on_up, on_down=on_down,
+    api.add_screen("Metronome", draw,
+                   on_up=lambda: bpm_rep.press(1),
+                   on_down=lambda: bpm_rep.press(-1),
                    on_select=on_select, background=background,
-                   on_exit=on_exit, veille_exempt=True, in_settings=True)
+                   on_enter=on_enter, on_exit=on_exit,
+                   veille_exempt=True, in_settings=True)
 
-    # ---- buzzer volume page ----
-    def _set_volume(v):
+    # ------------------------------------------------------------- volume
+    def _apply_volume(direction, mode):
         global _volume
-        _volume = max(0, min(100, v))
+        step = 10 if mode == 0 else 5
+        _volume = max(0, min(100, _volume + direction * step))
         if hasattr(piezo, "set_volume"):
             piezo.set_volume(_volume)
 
-    def vol_up():
-        _set_volume(_volume + 10)
+    vol_rep = _Repeater(ctx, _apply_volume)
 
-    def vol_down():
-        _set_volume(_volume - 10)
+    def vol_background(now):
+        vol_rep.update(now)
 
     def vol_select():
         if hasattr(piezo, "tone"):
             piezo.tone(FREQ_NORMAL, 120)
 
+    def vol_enter():
+        vol_rep.enter()
+
     def vol_exit():
+        vol_rep.leave()
         _save()
 
     def vol_draw():
@@ -197,6 +261,9 @@ def register(api):
         d.text(note, (ctx.WIDTH - len(note) * 8) // 2, header_h + 64, C.White)
         ctx.draw_footer_hint("UP/DN vol SEL test")
 
-    api.add_screen("Volume", vol_draw, on_up=vol_up, on_down=vol_down,
-                   on_select=vol_select, on_exit=vol_exit,
+    api.add_screen("Volume", vol_draw,
+                   on_up=lambda: vol_rep.press(1),
+                   on_down=lambda: vol_rep.press(-1),
+                   on_select=vol_select, background=vol_background,
+                   on_enter=vol_enter, on_exit=vol_exit,
                    veille_exempt=True, in_settings=True, order=101)

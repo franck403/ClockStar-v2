@@ -67,7 +67,7 @@ To offer it in the web installer, put the files under `python/extensions/<id>/` 
 
 Bundled extensions:
 - **Pedometer**: step counter screen in the Up/Down cycle (moved out of the core firmware).
-- **Metronome**: page in Settings, 30-240 BPM (Up/Down, faster when pressed quickly), SEL start/stop. Installs a working `Clockstar_v2/piezo_mini.py` over the stock disabled one. Also adds a **Volume** page in Settings (buzzer volume 0-100, adjusts the PWM duty cycle).
+- **Metronome**: page in Settings, 30-240 BPM (Up/Down; tap quickly for bigger steps, or hold to keep going, faster after a moment), SEL start/stop. Installs a working `Clockstar_v2/piezo_mini.py` over the stock disabled one. Also adds a **Volume** page in Settings (buzzer volume 0-100, adjusts the PWM duty cycle).
 
 ## Known Issues
 

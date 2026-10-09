@@ -44,7 +44,9 @@ except tick/background which receive time.ticks_ms()):
 ctx (api.ctx) gives you: display, Color, WIDTH, HEIGHT, cs, link, piezo,
 draw_background(), draw_header(title, badge=True), draw_footer_hint(text),
 draw_progress_bar(x, y, w, h, frac), text_2x(s, x, y, color),
-truncate(s, max_chars), wrap_text(s, max_chars), mark_dirty().
+truncate(s, max_chars), wrap_text(s, max_chars), mark_dirty(),
+buttons.state(ctx.Buttons.Up / Down / Select / Back) -> True while that
+button is held down (use it in tick/background for hold-to-repeat).
 
 A callback that raises is caught and printed; it never takes the watch
 down. A background() that raises is switched off.
