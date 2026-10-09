@@ -4,7 +4,7 @@
     {
       "id": "pedometer",
       "name": "Pedometer",
-      "description": "Step counter screen in the UP/DOWN cycle (gyro based, 10000 steps goal bar).",
+      "description": "Counts your steps with the motion sensor and shows them on their own screen, with a 10,000-step goal bar.",
       "default": false,
       "module": "ext_pedometer",
       "files": [
@@ -14,7 +14,7 @@
     {
       "id": "metronome",
       "name": "Metronome",
-      "description": "Metronome page in Settings (30-240 BPM). Replaces the disabled piezo driver with a working one.",
+      "description": "A metronome in Settings (30 to 240 BPM). It also installs a working buzzer driver in place of the disabled one.",
       "default": false,
       "module": "ext_metronome",
       "files": [

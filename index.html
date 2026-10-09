@@ -69,7 +69,7 @@
               ClockStar v2
             </h1>
             <span class="text-xs text-slate-400 font-medium"
-              >Browser-based firmware installer</span
+              >Install ClockStar v2 right from your browser</span
             >
           </div>
         </div>
@@ -98,16 +98,11 @@
           class="w-5 h-5 text-amber-400 shrink-0 mt-0.5"
         ></i>
         <div class="text-sm leading-relaxed">
-          <strong class="font-semibold text-amber-300"
-            >Before you start:</strong
-          >
-          This will overwrite the firmware and asset files currently on your
-          watch. Your saved settings (<code
-            class="bg-amber-950/60 text-amber-300 px-1.5 py-0.5 rounded border border-amber-800/40 text-xs font-mono"
-            >settings.json</code
-          >) will be replaced, so idle timeout and tilt-to-wake preferences
-          reset to defaults after flashing. Flashing MicroPython itself (Step 0)
-          fully erases the flash.
+          <strong class="font-semibold text-amber-300">Heads up:</strong>
+          installing replaces the firmware and files on your watch. Your
+          settings (screen timeout, tilt to wake) are kept if the watch already
+          has them. Flashing MicroPython in Step 0 wipes the whole watch, so
+          only do that if you really need it.
         </div>
       </div>
 
@@ -145,8 +140,7 @@
           <i data-lucide="help-circle" class="w-5 h-5 text-amber-500"></i>
         </div>
         <p class="text-sm text-slate-300 leading-relaxed">
-          The installer couldn't find a MicroPython REPL on this device. This
-          can mean one of two things:
+          We couldn't get an answer from MicroPython on this watch. That usually means one of two things:
         </p>
         <div class="grid sm:grid-cols-2 gap-3">
           <button
@@ -157,12 +151,10 @@
               class="flex items-center space-x-2 text-rose-300 font-semibold text-sm"
             >
               <i data-lucide="alert-octagon" class="w-4 h-4"></i>
-              <span>1. Device is bricked / unresponsive</span>
+              <span>1. The watch isn't responding</span>
             </div>
             <p class="text-xs text-slate-400 leading-relaxed">
-              The watch doesn't respond to the interrupt sequence at all, even
-              after reboot attempts. This usually means the firmware crashed
-              badly or flash got corrupted.
+              It ignores everything, even after a restart. The software may have crashed badly or the memory may be damaged.
             </p>
           </button>
           <button
@@ -173,12 +165,10 @@
               class="flex items-center space-x-2 text-cyan-300 font-semibold text-sm"
             >
               <i data-lucide="download" class="w-4 h-4"></i>
-              <span>2. Install / reinstall MicroPython</span>
+              <span>2. Install MicroPython (again)</span>
             </div>
             <p class="text-xs text-slate-400 leading-relaxed">
-              The watch is on stock firmware, blank, or you just want to reflash
-              MicroPython from a .bin file before installing the ClockStar
-              files.
+              The watch is blank or still has the original CircuitMess software, or you just want a fresh start. You'll pick a MicroPython .bin file and we'll flash it before installing ClockStar.
             </p>
           </button>
         </div>
@@ -188,24 +178,20 @@
         >
           <p class="font-semibold text-rose-300">Try this first:</p>
           <ol class="list-decimal list-inside space-y-1 text-rose-200/90">
-            <li>Unplug the watch fully (remove USB) and wait 10 seconds.</li>
+            <li>Unplug the watch completely and wait 10 seconds.</li>
             <li>
-              Hold the reset/boot button (if present) while plugging back in.
+              If it has a reset or boot button, hold it while you plug the USB cable back in.
             </li>
             <li>Reconnect here and try again.</li>
           </ol>
           <p class="text-rose-200/90">
-            If it still doesn't respond, use "Install / reinstall MicroPython"
-            below anyway &mdash; putting the ESP32-S3 into its ROM bootloader
-            (BOOT button held while plugging in, or via the reset pulse this
-            tool sends) lets esptool talk to it even with no working firmware at
-            all.
+            Still nothing? Choose "Install MicroPython (again)" anyway. With the BOOT button held while you plug the watch in, the chip's built-in bootloader lets us flash it even when no software works at all.
           </p>
           <button
             onclick="chooseFirmwarePath('install')"
             class="mt-1 px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 rounded-lg text-xs font-medium"
           >
-            Continue to MicroPython install anyway &rarr;
+            Install MicroPython anyway &rarr;
           </button>
         </div>
       </div>
@@ -222,16 +208,12 @@
           <i data-lucide="cpu" class="w-5 h-5 text-cyan-500"></i>
         </div>
         <p class="text-sm text-slate-300 leading-relaxed">
-          Select a MicroPython
-          <code class="bg-slate-800 px-1.5 py-0.5 rounded text-xs font-mono"
-            >.bin</code
-          >
-          firmware image built for ESP32-S3 (a combined image flashed at offset
-          <span class="font-mono">0x0</span> is expected &mdash; e.g. a
-          CircuitMess/MicroPython "firmware.bin" or "GENERIC_S3" build). This
-          will
-          <strong class="text-cyan-300">erase the entire flash</strong> before
-          writing.
+          Pick a MicroPython <code class="bg-slate-800 px-1.5 py-0.5 rounded text-xs font-mono">.bin</code>
+          file made for the ESP32-S3: a full image written at
+          <span class="font-mono">0x0</span>, like the CircuitMess
+          "firmware.bin" or a "GENERIC_S3" build.
+          <strong class="text-cyan-300">This erases everything on the watch</strong>
+          before the new firmware is written.
         </p>
         <input
           id="mpyBinInput"
@@ -247,13 +229,13 @@
             class="flex-1 py-3 px-4 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-medium rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-cyan-950/50 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
           >
             <i id="mpyFlashBtnIcon" data-lucide="zap" class="w-4 h-4"></i>
-            <span id="mpyFlashBtnText">Select a .bin file first</span>
+            <span id="mpyFlashBtnText">Pick a .bin file first</span>
           </button>
           <button
             onclick="skipMicroPythonFlash()"
             class="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all text-sm"
           >
-            Skip, already installed
+            Skip, MicroPython is already installed
           </button>
         </div>
         <div id="mpyFlashProgress" class="hidden space-y-2">
@@ -299,8 +281,7 @@
             Connect Your Watch
           </h2>
           <p id="mainCardDesc" class="text-xs text-slate-400 leading-relaxed">
-            Plug your ClockStar v2 into this computer with a USB-C cable, then
-            click Connect and pick its serial port when your browser asks.
+            Plug the watch into your computer with a USB-C cable, click Connect, then choose the watch in the window your browser shows.
           </p>
         </div>
         <div class="mt-5 flex items-center space-x-2">
@@ -324,34 +305,6 @@
         </div>
       </div>
 
-      <!-- Transfer speed -->
-      <div
-        class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg"
-      >
-        <label class="flex items-start space-x-3 cursor-pointer">
-          <input
-            type="checkbox"
-            id="speedTestToggle"
-            checked
-            class="mt-1 accent-cyan-500"
-          />
-          <div>
-            <div class="font-medium text-slate-200">
-              Speed test before install
-            </div>
-            <div class="text-xs text-slate-400 leading-relaxed">
-              Sends a few KB to the watch with growing packet sizes, checks them
-              on the watch, and uses the fastest size that stays error-free.
-              Takes about 10 seconds and makes the install faster.
-            </div>
-            <div
-              id="speedTestResult"
-              class="text-xs text-cyan-400 font-mono mt-1"
-            ></div>
-          </div>
-        </label>
-      </div>
-
       <!-- Extensions -->
       <div
         class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3 shadow-lg"
@@ -364,14 +317,7 @@
           <i data-lucide="puzzle" class="w-5 h-5 text-slate-500"></i>
         </div>
         <p class="text-xs text-slate-400 leading-relaxed">
-          Optional add-ons. They are installed together with the firmware, or
-          on their own at any time with the button below (no need to reinstall
-          everything). Only checked extensions are loaded by the watch (the
-          list is stored in
-          <code
-            class="bg-slate-950 text-slate-300 px-1.5 py-0.5 rounded border border-slate-800 text-xs font-mono"
-            >extensions.json</code
-          >).
+          Optional extras. Install them together with the firmware, or add them later on their own with the button below, with no full reinstall. The watch only loads the ones that are checked.
         </p>
         <div id="extensionList" class="space-y-2 text-sm text-slate-300">
           Loading extensions...
@@ -382,13 +328,10 @@
           class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-sm font-medium transition-all flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <i data-lucide="puzzle" class="w-4 h-4"></i>
-          <span>Install selected extensions only</span>
+          <span>Install selected extensions</span>
         </button>
         <p class="text-[11px] text-slate-500 leading-relaxed">
-          Connect the watch first (Connect Watch above). Only the extension
-          files and extensions.json are written, then the watch reboots.
-          Unchecked extensions are switched off (a piezo driver override is
-          restored to the stock one).
+          Connect the watch first. This only copies the extension files, then restarts the watch. Extensions you leave unchecked are switched off, and the original buzzer driver comes back if you uncheck the Metronome.
         </p>
       </div>
 
@@ -399,7 +342,7 @@
       >
         <div class="flex justify-between items-center text-sm">
           <span id="progressStatusText" class="font-medium text-slate-200"
-            >Preparing installation...</span
+            >Getting ready...</span
           >
           <span
             id="progressPercentText"
@@ -418,9 +361,10 @@
         <div
           class="flex justify-between items-center text-xs text-slate-400 font-mono"
         >
-          <span id="currentFileText">Waiting to start...</span>
+          <span id="currentFileText">Waiting to start</span>
           <span id="transferRateText"></span>
         </div>
+        <div id="speedTestResult" class="text-xs text-cyan-400 font-mono"></div>
       </div>
 
       <!-- Serial Terminal Log Window -->
@@ -481,7 +425,7 @@
     <footer
       class="border-t border-slate-800 bg-slate-950 py-4 text-center text-xs text-slate-500"
     >
-      ClockStar v2 Web Flasher &bull; GitHub Repo:
+      ClockStar v2 web installer &bull; Source code on GitHub:
       <a
         href="https://github.com/franck403/ClockStar-v2"
         target="_blank"
@@ -660,9 +604,9 @@
           extensionManifest = [];
           if (list)
             list.textContent =
-              "Couldn't load the extensions list (" +
+              "Couldn't load the extension list (" +
               err.message +
-              '). The core install still works.';
+              '). You can still install the firmware.';
         }
       }
 
@@ -742,7 +686,7 @@
           btnText.innerText = `Flash ${mpyBinFile.name}`;
         } else {
           btn.disabled = true;
-          btnText.innerText = 'Select a .bin file first';
+          btnText.innerText = 'Pick a .bin file first';
         }
       });
 
@@ -1046,7 +990,7 @@
             'error'
           );
           showNotification(
-            "This browser can't talk to USB devices. Please switch to Chrome or Edge and try again.",
+            "This browser can't connect to USB devices. Please open this page in Chrome or Edge.",
             'error'
           );
           return;
@@ -1061,11 +1005,11 @@
           startSerialReader();
 
           updateConnectionUI(true, { keepInstallDisabled: true });
-          _setMainButton('Verifying...', { disabled: true, icon: 'loader-2' });
+          _setMainButton('Checking...', { disabled: true, icon: 'loader-2' });
           _setMainCard(
             'Step 0',
             'Checking Your Watch',
-            "Connected — making sure it's running MicroPython before we touch anything.",
+            'Connected. Checking that MicroPython is running before we change anything.',
             'search'
           );
           logSerial(
@@ -1080,14 +1024,14 @@
             document
               .getElementById('firmwareCheckPanel')
               .classList.remove('hidden');
-            _setMainButton('Resolve Step 0 above', {
+            _setMainButton('Finish Step 0 above', {
               disabled: true,
               icon: 'help-circle',
             });
             _setMainCard(
               'Step 0',
-              'MicroPython Not Detected',
-              'Choose an option above before continuing.',
+              'MicroPython Not Found',
+              'Pick an option above to continue.',
               'help-circle'
             );
             return;
@@ -1101,7 +1045,7 @@
           _setMainCard(
             'Step 2 of 2',
             'Ready to Install',
-            'Your watch is connected and verified. Click below to flash the latest firmware and assets.',
+            'Your watch is connected and ready. Click below to install the latest firmware.',
             'check-circle-2'
           );
         } catch (err) {
@@ -1111,7 +1055,7 @@
           );
           if (err.name === 'NotFoundError') {
             showNotification(
-              'No port selected — pick your watch from the list to connect.',
+              'No device chosen. Select your watch in the list to connect.',
               'error'
             );
           } else {
@@ -1135,7 +1079,7 @@
           _setMainCard(
             'Step 0',
             'Flash MicroPython First',
-            'Select a .bin file above and flash it, or skip if MicroPython is actually already there.',
+            'Pick a .bin file above and flash it, or skip this step if MicroPython is already on the watch.',
             'cpu'
           );
         }
@@ -1151,7 +1095,7 @@
         _setMainCard(
           'Step 2 of 2',
           'Ready to Install',
-          'Proceeding to install the ClockStar files. Click below when ready.',
+          "Moving on to the ClockStar files. Click below when you're ready.",
           'check-circle-2'
         );
       }
@@ -1163,7 +1107,7 @@
         if (!port || !mpyBinFile) return;
         if (!window.__esptool) {
           showNotification(
-            "The flashing library hasn't finished loading yet — wait a second and try again.",
+            'The flashing tool is still loading. Wait a moment and try again.',
             'error'
           );
           return;
@@ -1249,13 +1193,13 @@
           await transport.disconnect();
 
           showNotification(
-            'MicroPython flashed. Reconnect the watch to continue with the file install.',
+            'MicroPython is installed. Reconnect the watch to continue.',
             'success'
           );
           _setMainCard(
             'Step 0 Complete',
             'MicroPython Installed',
-            'The watch rebooted with fresh MicroPython. Disconnect and reconnect, then continue to install the ClockStar files.',
+            'MicroPython is installed and the watch restarted. Unplug it, plug it back in, reconnect here, then install ClockStar.',
             'check-circle-2'
           );
           document.getElementById('mpyFlashPanel').classList.add('hidden');
@@ -1277,7 +1221,7 @@
         } finally {
           flashBtnText.innerText = mpyBinFile
             ? `Flash ${mpyBinFile.name}`
-            : 'Select a .bin file first';
+            : 'Pick a .bin file first';
           flashBtnIcon.setAttribute('data-lucide', 'zap');
           flashBtnIcon.classList.remove('animate-spin');
           lucide.createIcons();
@@ -1322,7 +1266,7 @@
           _setMainCard(
             'Step 1 of 2',
             'Connect Your Watch',
-            'Plug your ClockStar v2 into this computer with a USB-C cable, then click Connect and pick its serial port when your browser asks.',
+            'Plug the watch into your computer with a USB-C cable, click Connect, then choose the watch in the window your browser shows.',
             'usb'
           );
           badge.className =
@@ -1612,13 +1556,13 @@
         }
 
         logSerial(
-          '=== Speed test: looking for the fastest stable packet size ===',
+          '=== Speed test: finding the fastest packet size that works reliably ===',
           'cmd'
         );
         let best = null;
         for (const profile of TRANSFER_PROFILES) {
           if (statusEl)
-            statusEl.innerText = `Speed test: ${profile.chunk}-byte packets...`;
+            statusEl.innerText = `Testing transfer speed (${profile.chunk}-byte packets)...`;
           transfer = { ...profile };
           let totalMs = 0;
           let ok = true;
@@ -1663,8 +1607,8 @@
 
         transfer = { ...(best ? best.profile : TRANSFER_PROFILES[0]) };
         const msg = best
-          ? `Using ${transfer.chunk}-byte packets (~${best.kbps.toFixed(1)} KB/s measured)`
-          : 'Speed test failed, using the safe default (256-byte packets)';
+          ? `Transfer speed: using ${transfer.chunk}-byte packets (about ${best.kbps.toFixed(1)} KB/s)`
+          : 'Speed test didn\'t work, so we\'ll use the safe default (256-byte packets)';
         logSerial(msg, best ? 'success' : 'warn');
         if (resultEl) resultEl.innerText = msg;
       }
@@ -1672,7 +1616,7 @@
       async function startExtensionInstall() {
         if (!port) {
           showNotification(
-            'Connect your watch first (Connect Watch above), then install the extensions.',
+            'Connect your watch first with the Connect Watch button above, then install the extensions.',
             'error'
           );
           return;
@@ -1683,7 +1627,7 @@
       async function startInstallation(mode = 'full') {
         if (!port) {
           showNotification(
-            'Connect your watch first, then try installing again.',
+            'Connect your watch first, then try again.',
             'error'
           );
           return;
@@ -1703,7 +1647,7 @@
         _setMainCard(
           'Step 2 of 2',
           'Installing...',
-          'Flashing firmware and assets — keep the watch plugged in and this tab open.',
+          'Copying files to the watch. Keep it plugged in and leave this tab open.',
           'download-cloud'
         );
         progressContainer.classList.remove('hidden');
@@ -1726,11 +1670,8 @@
             "import os, ubinascii\ntry:\n os.mkdir('icons')\nexcept:\n pass\ntry:\n os.mkdir('Clockstar_v2')\nexcept:\n pass\n"
           );
 
-          if (document.getElementById('speedTestToggle').checked) {
-            await runSpeedTest();
-          } else {
-            transfer = { ...TRANSFER_PROFILES[0] };
-          }
+          // Always find the fastest packet size that works on this watch.
+          await runSpeedTest();
 
           const installList = buildInstallList(mode);
           const total = installList.length;
@@ -1850,7 +1791,7 @@
                 'success'
               );
             } else {
-              logSerial('Watch clock write gave no confirmation: ' + rtcOut, 'warn');
+              logSerial('The watch clock write was not confirmed: ' + rtcOut, 'warn');
             }
           } catch (e) {
             logSerial(`Couldn't set the watch clock: ${e.message}`, 'warn');
@@ -1877,13 +1818,13 @@
               'error'
             );
             showNotification(
-              'Files were installed, but the watch hit an error on reboot. Open the logs to see what happened.',
+              'The files were copied, but the watch hit an error when it restarted. Open the logs to see what happened.',
               'error'
             );
             _setMainCard(
               'Step 2 of 2',
               'Installed, With Errors',
-              'Files transferred, but the watch reported a problem on reboot. Check the logs for details.',
+              'The files were copied, but the watch reported an error when it restarted. Open the logs to see what it said.',
               'alert-triangle'
             );
           } else {
@@ -1898,7 +1839,7 @@
             _setMainCard(
               'Step 2 of 2',
               'Installation Complete',
-              'Your watch has been updated and rebooted successfully. You can disconnect it now, or reinstall any time.',
+              'Everything is installed and the watch restarted fine. You can unplug it now, or run the installer again any time.',
               'check-circle-2'
             );
           }
@@ -1914,7 +1855,7 @@
           _setMainCard(
             'Step 2 of 2',
             'Installation Failed',
-            'Something went wrong partway through. Open the logs for details, then try again.',
+            'The install stopped before it finished. Open the logs to see why, then try again.',
             'alert-triangle'
           );
         } finally {
