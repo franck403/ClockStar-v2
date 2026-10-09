@@ -16,7 +16,7 @@ except Exception as e:
 from machine import PWM, Pin, freq
 from phone_link import PhoneLink
 import battery
-import pedometer
+import screens
 import render
 import Clockstar_v2 as cs
 
@@ -335,14 +335,18 @@ gc.collect()
 SCREEN_SYNC_LOCK = -1
 SCREEN_CLOCK = 0
 SCREEN_MEDIA = 1
-SCREEN_PEDOMETER = 2
-SCREEN_NOTIF_LIST = 3
-SCREEN_SETTINGS = 4
-SCREEN_BLE_SCAN = 5
-SCREEN_BLE_CONTROL = 6
-SCREEN_BLE_BLOCKED = 7
-SCREEN_BLE_CMD_PICKER = 8
-_NUM_SCREENS = 4 
+SCREEN_NOTIF_LIST = 2
+SCREEN_SETTINGS = 3
+SCREEN_BLE_SCAN = 4
+SCREEN_BLE_CONTROL = 5
+SCREEN_BLE_BLOCKED = 6
+SCREEN_BLE_CMD_PICKER = 7
+# Any screen registered through screens.add_screen() (see screens.py) is
+# shown under this one id; _ext_screen says which one is active.
+SCREEN_EXT = 8
+# Core screens in the UP/DOWN cycle (clock, media, notifs). Extension
+# screens registered with in_settings=False are appended after these.
+_NUM_CORE_CYCLE = 3
 
 _screen = SCREEN_CLOCK
 _prev_screen = SCREEN_CLOCK  
@@ -360,6 +364,92 @@ _BLE_NAV = False
 def _mark_dirty():
     global _dirty
     _dirty = True
+
+
+# ---------------------------------------------------------------------------
+# Extension screens (screens.py API)
+# ---------------------------------------------------------------------------
+_ext_screen = None
+_ext_return = SCREEN_CLOCK
+
+
+def _ext_safe(fn, *args):
+    try:
+        return fn(*args)
+    except Exception as e:
+        sys.print_exception(e)
+        return None
+
+
+def _leave_ext():
+    global _ext_screen
+    scr = _ext_screen
+    _ext_screen = None
+    if scr is not None and scr.on_exit is not None:
+        _ext_safe(scr.on_exit)
+
+
+def _enter_ext(scr, return_screen):
+    global _screen, _ext_screen, _ext_return
+    if _ext_screen is not None and _ext_screen is not scr:
+        _leave_ext()
+    if _ext_screen is not scr:
+        _ext_screen = scr
+        if scr.on_enter is not None:
+            _ext_safe(scr.on_enter)
+    _ext_return = return_screen
+    _screen = SCREEN_EXT
+    _mark_dirty()
+
+
+def _close_ext():
+    global _screen
+    ret = _ext_return
+    _leave_ext()
+    _screen = ret
+    _mark_dirty()
+
+
+def _ext_event(name):
+    """Run the active extension screen's callback `name`. Returns True if
+    the press was handled (callback exists and did not return False)."""
+    scr = _ext_screen
+    if scr is None:
+        return False
+    fn = getattr(scr, name)
+    if fn is None:
+        return False
+    try:
+        r = fn()
+    except Exception as e:
+        sys.print_exception(e)
+        r = None
+    _mark_dirty()
+    return r is not False
+
+
+def _cycle_len():
+    return _NUM_CORE_CYCLE + len(screens.cycle)
+
+
+def _cycle_pos():
+    if _screen == SCREEN_EXT and _ext_screen is not None:
+        try:
+            return _NUM_CORE_CYCLE + screens.cycle.index(_ext_screen)
+        except ValueError:
+            return 0
+    return _screen
+
+
+def _goto_cycle_pos(pos):
+    global _screen
+    if pos < _NUM_CORE_CYCLE:
+        if _screen == SCREEN_EXT:
+            _leave_ext()
+        _screen = pos
+        _mark_dirty()
+    else:
+        _enter_ext(screens.cycle[pos - _NUM_CORE_CYCLE], SCREEN_CLOCK)
 
 
 # ---------------------------------------------------------------------------
@@ -498,10 +588,27 @@ SETTINGS_ROW_TILT_WAKE = 1
 SETTINGS_ROW_GYRO = 2
 SETTINGS_ROW_BATTERY = 3
 SETTINGS_ROW_BLE_TOOLS = 4
-_SETTINGS_NUM_ROWS = 5
+_SETTINGS_BASE_ROWS = 5
+_SETTINGS_ROW_H = 16
+# rows that fit between the 14px header and the footer hint
+_SETTINGS_MAX_VISIBLE = (HEIGHT - 14 - 6 - 14) // _SETTINGS_ROW_H
 
 _settings_selected_row = 0
 _settings_in_row = False
+_settings_scroll = 0
+
+
+def _settings_num_rows():
+    # base rows + one row per extension screen registered with in_settings=True
+    return _SETTINGS_BASE_ROWS + len(screens.settings_pages)
+
+
+def _settings_fit_scroll():
+    global _settings_scroll
+    if _settings_selected_row < _settings_scroll:
+        _settings_scroll = _settings_selected_row
+    elif _settings_selected_row >= _settings_scroll + _SETTINGS_MAX_VISIBLE:
+        _settings_scroll = _settings_selected_row - _SETTINGS_MAX_VISIBLE + 1
 
 # BLE tools is a small sub-page with its own 2-entry cursor: Scan devices
 # and Control mode, navigated the same way as every other in-row screen
@@ -552,9 +659,10 @@ def _save_settings():
 
 
 def _settings_reset_nav():
-    global _settings_selected_row, _settings_in_row
+    global _settings_selected_row, _settings_in_row, _settings_scroll
     _settings_selected_row = 0
     _settings_in_row = False
+    _settings_scroll = 0
 
 
 def _settings_row_label(row):
@@ -569,6 +677,10 @@ def _settings_row_label(row):
         return "Batterie"
     elif row == SETTINGS_ROW_BLE_TOOLS:
         return "BLE tools"
+    elif row >= _SETTINGS_BASE_ROWS:
+        idx = row - _SETTINGS_BASE_ROWS
+        if idx < len(screens.settings_pages):
+            return screens.settings_pages[idx].name
     return "?"
 
 
@@ -577,9 +689,13 @@ def draw_settings_screen():
     header_h = draw_header("SETTINGS", badge=False)
 
     if not _settings_in_row:
-        row_h = 16
+        row_h = _SETTINGS_ROW_H
         y = header_h + 6
-        for row in range(_SETTINGS_NUM_ROWS):
+        n_rows = _settings_num_rows()
+        if n_rows > _SETTINGS_MAX_VISIBLE:
+            pos = "%d/%d" % (_settings_selected_row + 1, n_rows)
+            display.text(pos, WIDTH - len(pos) * 8 - 4, 3, Color.Black)
+        for row in range(_settings_scroll, min(n_rows, _settings_scroll + _SETTINGS_MAX_VISIBLE)):
             if row == _settings_selected_row:
                 display.fill_rect(2, y - 2, WIDTH - 4, row_h - 2, Color.White)
                 display.text(_settings_row_label(row), 6, y + 1, Color.Black)
@@ -672,7 +788,8 @@ def draw_settings_screen():
 def _settings_on_up():
     global _settings_selected_row, _veille_idx, _ble_tools_selected_idx
     if not _settings_in_row:
-        _settings_selected_row = (_settings_selected_row - 1) % _SETTINGS_NUM_ROWS
+        _settings_selected_row = (_settings_selected_row - 1) % _settings_num_rows()
+        _settings_fit_scroll()
         _mark_dirty()
     elif _settings_selected_row == SETTINGS_ROW_VEILLE:
         _veille_idx = (_veille_idx + 1) % len(VEILLE_OPTIONS_MS)
@@ -686,7 +803,8 @@ def _settings_on_up():
 def _settings_on_down():
     global _settings_selected_row, _veille_idx, _ble_tools_selected_idx
     if not _settings_in_row:
-        _settings_selected_row = (_settings_selected_row + 1) % _SETTINGS_NUM_ROWS
+        _settings_selected_row = (_settings_selected_row + 1) % _settings_num_rows()
+        _settings_fit_scroll()
         _mark_dirty()
     elif _settings_selected_row == SETTINGS_ROW_VEILLE:
         _veille_idx = (_veille_idx - 1) % len(VEILLE_OPTIONS_MS)
@@ -702,6 +820,11 @@ def _settings_on_select():
     print("DEBUG settings_on_select: in_row=", _settings_in_row,
           "row=", _settings_selected_row, "ble_idx=", _ble_tools_selected_idx)
     if not _settings_in_row:
+        if _settings_selected_row >= _SETTINGS_BASE_ROWS:
+            idx = _settings_selected_row - _SETTINGS_BASE_ROWS
+            if idx < len(screens.settings_pages):
+                _enter_ext(screens.settings_pages[idx], SCREEN_SETTINGS)
+            return
         _settings_in_row = True
         _mark_dirty()
         return
@@ -1088,8 +1211,10 @@ def _on_up_press():
         link.media_next()
         _mark_dirty()
         return
-    _screen = (_screen - 1) % _NUM_SCREENS
-    _mark_dirty()
+    if _screen == SCREEN_EXT:
+        if _ext_event("on_up") or (_ext_screen is not None and _ext_screen.in_settings):
+            return
+    _goto_cycle_pos((_cycle_pos() - 1) % _cycle_len())
 
 
 def _on_down_press():
@@ -1121,8 +1246,10 @@ def _on_down_press():
         link.media_prev()
         _mark_dirty()
         return
-    _screen = (_screen + 1) % _NUM_SCREENS
-    _mark_dirty()
+    if _screen == SCREEN_EXT:
+        if _ext_event("on_down") or (_ext_screen is not None and _ext_screen.in_settings):
+            return
+    _goto_cycle_pos((_cycle_pos() + 1) % _cycle_len())
 
 
 def _on_back_press():
@@ -1147,6 +1274,10 @@ def _on_back_press():
     if _screen == SCREEN_BLE_BLOCKED:
         _screen = _ble_return_screen
         _mark_dirty()
+        return
+    if _screen == SCREEN_EXT:
+        if not _ext_event("on_back"):
+            _close_ext()
         return
     if _screen == SCREEN_MEDIA:
         if _media_control_mode:
@@ -1224,9 +1355,8 @@ def _do_select_short_action():
                 link.media_play()
                 _media_state = "playing"
         _mark_dirty()
-    elif _screen == SCREEN_PEDOMETER:
-        pedometer.reset()
-        _mark_dirty()
+    elif _screen == SCREEN_EXT:
+        _ext_event("on_select")
     elif _screen == SCREEN_NOTIF_LIST:
         if not _notif_nav_mode:
             _clamp_selected_idx()
@@ -1468,29 +1598,33 @@ def _draw_chevron(cx, cy, direction="right", size=6):
     render.draw_chevron(display, Color.White, cx, cy, direction=direction, size=size)
 
 
-PEDOMETER_DAILY_GOAL = 10000
+def _draw_ext_screen():
+    scr = _ext_screen
+    if scr is None:
+        return
+    try:
+        scr.draw()
+    except Exception as e:
+        sys.print_exception(e)
+        display.fill(Color.Black)
+        draw_header(_truncate(scr.name, 14), badge=False)
+        display.text("screen error", 4, 24, Color.White)
+        draw_footer_hint("BACK exit")
 
 
-def draw_pedometer_screen():
-    draw_background()
-    header_h = draw_header("STEPS")
-
-    steps = pedometer.get_steps()
-    steps_str = str(steps)
-    text_x = (WIDTH - len(steps_str) * 16) // 2
-    text_y = header_h + 22
-    _text_2x(steps_str, text_x, text_y, Color.White)
-
-    bar_y = text_y + 26
-    bar_w = WIDTH - 24
-    bar_x = 12
-    frac = steps / PEDOMETER_DAILY_GOAL
-    draw_progress_bar(bar_x, bar_y, bar_w, 10, frac)
-
-    goal_str = "%d / %d" % (steps, PEDOMETER_DAILY_GOAL)
-    display.text(goal_str, (WIDTH - len(goal_str) * 8) // 2, bar_y + 14, Color.White)
-
-    draw_footer_hint("SEL reset steps")
+def _init_extensions():
+    """Hand the shared helpers to screens.py and load extensions.json."""
+    screens.setup(
+        display=display, Color=Color, WIDTH=WIDTH, HEIGHT=HEIGHT,
+        cs=cs, link=link, piezo=piezo,
+        draw_background=draw_background, draw_header=draw_header,
+        draw_footer_hint=draw_footer_hint, draw_progress_bar=draw_progress_bar,
+        text_2x=_text_2x, truncate=_truncate, wrap_text=_wrap_text,
+        mark_dirty=_mark_dirty,
+    )
+    loaded = screens.load_extensions()
+    print("extensions loaded:", loaded)
+    gc.collect()
 
 
 def _wrap_text(text, max_chars):
@@ -1622,8 +1756,8 @@ def draw_frame():
         draw_clock_screen()
     elif _screen == SCREEN_MEDIA:
         draw_media_screen()
-    elif _screen == SCREEN_PEDOMETER:
-        draw_pedometer_screen()
+    elif _screen == SCREEN_EXT:
+        _draw_ext_screen()
     elif _screen == SCREEN_NOTIF_LIST:
         draw_notif_list_screen()
     elif _screen == SCREEN_SETTINGS:
@@ -1691,14 +1825,16 @@ def _refresh_idle_freq():
         freq(idle_hz)
 
 
-def _update_active_ui(now, last_sync_anim, last_pedometer_steps):
+def _update_active_ui(now, last_sync_anim):
     global _select_held, _select_hold_start, _slide_active, _slide_progress, last_activity
 
-    if _screen == SCREEN_PEDOMETER:
-        current_steps = pedometer.get_steps()
-        if current_steps != last_pedometer_steps:
-            last_pedometer_steps = current_steps
-            _mark_dirty()
+    if _screen == SCREEN_EXT and _ext_screen is not None and _ext_screen.tick is not None:
+        try:
+            if _ext_screen.tick(now):
+                _mark_dirty()
+        except Exception as e:
+            sys.print_exception(e)
+            _ext_screen.tick = None
 
     if _screen == SCREEN_SYNC_LOCK and time.ticks_diff(now, last_sync_anim) >= SYNC_ANIM_INTERVAL_MS:
         last_sync_anim = now
@@ -1724,7 +1860,7 @@ def _update_active_ui(now, last_sync_anim, last_pedometer_steps):
     main_loop_ble_control_flash_tick()
     _ble_blocked_recheck()
 
-    return last_sync_anim, last_pedometer_steps
+    return last_sync_anim
 
 
 def main_loop():
@@ -1741,7 +1877,6 @@ def main_loop():
     last_sync_anim = time.ticks_ms()
     last_activity = time.ticks_ms()
     last_screen = _screen
-    last_pedometer_steps = pedometer.get_steps()
 
     _init_charge_pin()
     _poll_battery()
@@ -1761,13 +1896,11 @@ def main_loop():
     BLE_POLL_OFF_MS = 2000
 
     while True:
-        pedometer.poll()
         now = time.ticks_ms()
+        screens.run_background(now)
 
         if not bs:
-            last_sync_anim, last_pedometer_steps = _update_active_ui(
-                now, last_sync_anim, last_pedometer_steps
-            )
+            last_sync_anim = _update_active_ui(now, last_sync_anim)
 
         do_input_poll = (not bs) or (
             time.ticks_diff(now, last_input_poll) >= INPUT_POLL_OFF_MS
@@ -1839,8 +1972,10 @@ def main_loop():
             last_battery_log = now
 
         veille_ms = VEILLE_OPTIONS_MS[_veille_idx]
-        veille_exempt = _screen in (SCREEN_SETTINGS, SCREEN_SYNC_LOCK, SCREEN_BLE_CONTROL,
-                                     SCREEN_BLE_CMD_PICKER, SCREEN_BLE_SCAN, SCREEN_BLE_BLOCKED)
+        veille_exempt = (_screen in (SCREEN_SETTINGS, SCREEN_SYNC_LOCK, SCREEN_BLE_CONTROL,
+                                      SCREEN_BLE_CMD_PICKER, SCREEN_BLE_SCAN, SCREEN_BLE_BLOCKED)
+                         or (_screen == SCREEN_EXT and _ext_screen is not None
+                             and _ext_screen.veille_exempt))
         if (not bs and not veille_exempt
                 and time.ticks_diff(now, last_activity) >= veille_ms):
             backlightF()
@@ -1867,4 +2002,5 @@ def main_loop():
 if __name__ == "__main__":
     cs.rgb.set(0, 0, 0)
     _load_settings()
+    _init_extensions()
     main_loop()

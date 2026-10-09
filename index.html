@@ -324,6 +324,30 @@
         </div>
       </div>
 
+      <!-- Extensions -->
+      <div
+        class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3 shadow-lg"
+      >
+        <div class="flex items-center justify-between">
+          <span
+            class="text-xs font-bold tracking-wider text-cyan-400 uppercase"
+            >Extensions</span
+          >
+          <i data-lucide="puzzle" class="w-5 h-5 text-slate-500"></i>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          Optional add-ons installed together with the firmware. Only checked
+          extensions are loaded by the watch (the list is stored in
+          <code
+            class="bg-slate-950 text-slate-300 px-1.5 py-0.5 rounded border border-slate-800 text-xs font-mono"
+            >extensions.json</code
+          >).
+        </p>
+        <div id="extensionList" class="space-y-2 text-sm text-slate-300">
+          Loading extensions...
+        </div>
+      </div>
+
       <!-- Installation Progress Bar -->
       <div
         id="progressContainer"
@@ -454,9 +478,9 @@
         'clock_bg.spr',
         'control_bg.spr',
         'main.py',
-        'pedometer.py',
         'phone_link.py',
         'render.py',
+        'screens.py',
         'settings.json',
         'sprite.py',
 
@@ -483,6 +507,131 @@
       const INSTALL_FILES = [
         ...INSTALL_FILES_ROOT.map((f) => ({ repoPath: f, destPath: f })),
       ];
+
+      // ==========================================
+      // EXTENSIONS
+      // ==========================================
+      // The list of optional extensions lives in the repo at
+      // python/extensions/manifest.json (id, name, description, module,
+      // files[{src,dest}]). To offer a new extension, add its files under
+      // python/extensions/<id>/ and an entry in that manifest -- this page
+      // needs no change. A file whose dest matches a core file overrides it
+      // (that is how the Metronome swaps in the working piezo driver).
+      // The chosen modules are written to extensions.json on the watch,
+      // which screens.py loads at boot.
+      const EXT_STORAGE_KEY = 'clockstar_extensions';
+      let extensionManifest = [];
+
+      function _loadSavedExtensionChoice() {
+        try {
+          const raw = localStorage.getItem(EXT_STORAGE_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function _saveExtensionChoice() {
+        try {
+          localStorage.setItem(
+            EXT_STORAGE_KEY,
+            JSON.stringify(getSelectedExtensions().map((e) => e.id))
+          );
+        } catch (e) {}
+      }
+
+      function getSelectedExtensions() {
+        return extensionManifest.filter((ext) => {
+          const box = document.getElementById('ext-' + ext.id);
+          return box && box.checked;
+        });
+      }
+
+      function renderExtensions() {
+        const list = document.getElementById('extensionList');
+        if (!list) return;
+        list.textContent = '';
+        if (!extensionManifest.length) {
+          list.textContent = 'No extensions available.';
+          return;
+        }
+        const saved = _loadSavedExtensionChoice();
+        for (const ext of extensionManifest) {
+          const label = document.createElement('label');
+          label.className =
+            'flex items-start space-x-3 cursor-pointer bg-slate-950/50 border border-slate-800 rounded-xl p-3 hover:border-slate-700 transition-all';
+
+          const box = document.createElement('input');
+          box.type = 'checkbox';
+          box.id = 'ext-' + ext.id;
+          box.className = 'mt-1 accent-cyan-500';
+          box.checked = saved ? saved.includes(ext.id) : !!ext.default;
+          box.addEventListener('change', _saveExtensionChoice);
+
+          const text = document.createElement('div');
+          const title = document.createElement('div');
+          title.className = 'font-medium text-slate-200';
+          title.textContent = ext.name;
+          const desc = document.createElement('div');
+          desc.className = 'text-xs text-slate-400 leading-relaxed';
+          desc.textContent = ext.description || '';
+          text.appendChild(title);
+          text.appendChild(desc);
+
+          label.appendChild(box);
+          label.appendChild(text);
+          list.appendChild(label);
+        }
+      }
+
+      async function loadExtensionManifest() {
+        const list = document.getElementById('extensionList');
+        try {
+          const res = await fetch(
+            REPO_BASE + 'extensions/manifest.json?t=' + Date.now(),
+            { cache: 'no-store' }
+          );
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          extensionManifest = Array.isArray(data.extensions)
+            ? data.extensions
+            : [];
+          renderExtensions();
+        } catch (err) {
+          extensionManifest = [];
+          if (list)
+            list.textContent =
+              "Couldn't load the extensions list (" +
+              err.message +
+              '). The core install still works.';
+        }
+      }
+
+      // Core files + selected extension files (extensions override core on
+      // the same dest) + a generated extensions.json for the watch.
+      function buildInstallList() {
+        const map = new Map();
+        for (const f of INSTALL_FILES) map.set(f.destPath, f);
+        const selected = getSelectedExtensions();
+        for (const ext of selected) {
+          for (const f of ext.files || []) {
+            map.set(f.dest, { repoPath: f.src, destPath: f.dest });
+          }
+        }
+        const items = [...map.values()];
+        items.push({
+          generated: true,
+          destPath: 'extensions.json',
+          content: JSON.stringify(selected.map((e) => e.module)),
+        });
+        return items;
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadExtensionManifest);
+      } else {
+        loadExtensionManifest();
+      }
 
       // ==========================================
       // GLOBAL SERIAL STATE & LOCKS
@@ -1397,13 +1546,32 @@
             "import os, ubinascii\ntry:\n os.mkdir('icons')\nexcept:\n pass\ntry:\n os.mkdir('Clockstar_v2')\nexcept:\n pass\n"
           );
 
-          const total = INSTALL_FILES.length;
+          const installList = buildInstallList();
+          const total = installList.length;
+          logSerial(
+            'Extensions: ' +
+              (getSelectedExtensions().map((e) => e.name).join(', ') ||
+                'none'),
+            'info'
+          );
           let completed = 0;
           const startTime = Date.now();
 
-          for (let item of INSTALL_FILES) {
+          for (let item of installList) {
             const repoPath = item.repoPath;
             const destPath = item.destPath;
+
+            if (item.generated) {
+              const generatedData = new TextEncoder().encode(item.content);
+              logSerial(
+                `Writing ${destPath} (${generatedData.length} bytes, generated)...`,
+                'info'
+              );
+              await writeFileToWatch(destPath, generatedData);
+              completed++;
+              updateProgress(completed, total, 'Installing...', startTime);
+              continue;
+            }
 
             updateProgress(completed, total, 'Installing...', startTime);
 

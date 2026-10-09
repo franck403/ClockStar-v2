@@ -1,0 +1,26 @@
+{
+  "_comment": "Extensions offered by the web installer. src is relative to python/ in the repo, dest is the path on the watch. A dest that matches a core file overrides it. module is the name written to extensions.json on the watch (it must expose register(api), see python/screens.py). To add an extension: drop its files under python/extensions/<id>/ and add an entry here -- no installer change needed.",
+  "extensions": [
+    {
+      "id": "pedometer",
+      "name": "Pedometer",
+      "description": "Step counter screen in the UP/DOWN cycle (gyro based, 10000 steps goal bar).",
+      "default": false,
+      "module": "ext_pedometer",
+      "files": [
+        { "src": "extensions/pedometer/ext_pedometer.py", "dest": "ext_pedometer.py" }
+      ]
+    },
+    {
+      "id": "metronome",
+      "name": "Metronome",
+      "description": "Metronome page in Settings (30-240 BPM). Replaces the disabled piezo driver with a working one.",
+      "default": false,
+      "module": "ext_metronome",
+      "files": [
+        { "src": "extensions/metronome/ext_metronome.py", "dest": "ext_metronome.py" },
+        { "src": "extensions/metronome/Clockstar_v2/piezo_mini.py", "dest": "Clockstar_v2/piezo_mini.py" }
+      ]
+    }
+  ]
+}
