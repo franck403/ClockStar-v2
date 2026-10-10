@@ -629,6 +629,9 @@
           <button onclick="sendCtrlC()" title="Send Ctrl+C Interrupt" class="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition-all flex items-center space-x-1">
             <i data-lucide="slash" class="w-3 h-3"></i><span>Interrupt (Ctrl+C)</span>
           </button>
+          <button onclick="hardResetWatch()" title="Force reboot with the RTS reset line, for a frozen watch" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-medium transition-all flex items-center space-x-1">
+            <i data-lucide="power" class="w-3 h-3"></i><span>Force reboot</span>
+          </button>
           <button onclick="rebootWatch()" title="Reboot Watch (Ctrl+D)" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-medium transition-all flex items-center space-x-1">
             <i data-lucide="rotate-cw" class="w-3 h-3"></i><span>Reboot Watch</span>
           </button>
@@ -1754,6 +1757,33 @@
         }
       }
 
+      // Hardware reset through the serial control lines (same sequence esptool
+      // uses): DTR low keeps the boot pin high, RTS high pulls EN low (reset),
+      // then RTS low releases it so the watch boots normally. Used when the
+      // watch stops answering.
+      async function hardResetWatch() {
+        if (!port) {
+          logSerial('Force reboot: no watch connected.', 'error');
+          return false;
+        }
+        logSerial('Force reboot: pulsing the reset line (RTS)...', 'warn');
+        try {
+          await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+          await new Promise((r) => setTimeout(r, 120));
+          await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+        } catch (err) {
+          logSerial(
+            `Force reboot failed: ${err.message}. Unplug the watch, plug it back in and reconnect.`,
+            'error'
+          );
+          return false;
+        }
+        incomingBuffer = '';
+        await new Promise((r) => setTimeout(r, 2000)); // let it boot
+        logSerial('Force reboot sent, the watch is restarting.', 'success');
+        return true;
+      }
+
       async function enterRawRepl() {
         logSerial('Attempting to enter MicroPython Raw REPL mode...', 'cmd');
 
@@ -1823,6 +1853,12 @@
           _logBufferSnapshot(
             `attempt ${attempt} - after Ctrl+A wait (no match)`
           );
+
+          // Still silent after a few tries: the watch is probably frozen,
+          // so force a hardware reboot and keep trying.
+          if (attempt % 3 === 0 && attempt < 10) {
+            await hardResetWatch();
+          }
         }
 
         logSerial(
@@ -2293,6 +2329,7 @@
       // Expose functions referenced by inline onclick= handlers.
       window.handleMainAction = handleMainAction;
       window.startExtensionInstall = startExtensionInstall;
+      window.hardResetWatch = hardResetWatch;
       window.startFullInstall = startFullInstall;
       window.selectAction = selectAction;
       window.toggleConsole = toggleConsole;
