@@ -40,6 +40,8 @@ clock_bg.spr        Clock face background sprite
 
 ## Flashing
 
+**MicroPython version:** I recommend **MicroPython 1.29** (the one I use, it works best). Get the ESP32-S3 build from https://micropython.org/download/ESP32_GENERIC_S3/ and flash it from the installer's *MicroPython* tab.
+
 A browser-based installer (Web Serial API) is available for flashing this firmware without any local tooling — just Chrome/Edge, a USB-C cable, and the watch. It fetches every file from this repo, opens a MicroPython Raw REPL session over serial, and writes each file to the device.
 
 Flow: click **Connect Watch** first. Once the watch is connected (and MicroPython is detected) the page offers three choices: **Install ClockStar**, **Add-ons** (install or remove extras on their own), or **Install MicroPython**. A watch illustration on the right mirrors the state (not connected, clock, install progress).
@@ -69,6 +71,7 @@ To offer it in the web installer, put the files under `python/extensions/<id>/` 
 
 Bundled extensions:
 - **Pedometer**: step counter screen in the Up/Down cycle (moved out of the core firmware).
+- **BLE tools**: page in Settings with two tools: scan nearby Bluetooth devices, and a control mode that sends commands (edit `COMMANDS` in `ext_ble_tools.py`) to a connected PC. Both need the phone disconnected first (the watch offers to do it). These used to be built into `main.py`.
 - **Metronome**: page in Settings, 30-240 BPM (Up/Down; tap quickly for bigger steps, or hold to keep going, faster after a moment), SEL start/stop. Installs a working `Clockstar_v2/piezo_mini.py` over the stock disabled one. Also adds a **Volume** page in Settings (buzzer volume 0-100, adjusts the PWM duty cycle).
 
 ## Known Issues

@@ -8,7 +8,10 @@
       "default": false,
       "module": "ext_pedometer",
       "files": [
-        { "src": "extensions/pedometer/ext_pedometer.py", "dest": "ext_pedometer.py" }
+        {
+          "src": "extensions/pedometer/ext_pedometer.py",
+          "dest": "ext_pedometer.py"
+        }
       ]
     },
     {
@@ -18,8 +21,27 @@
       "default": false,
       "module": "ext_metronome",
       "files": [
-        { "src": "extensions/metronome/ext_metronome.py", "dest": "ext_metronome.py" },
-        { "src": "extensions/metronome/Clockstar_v2/piezo_mini.py", "dest": "Clockstar_v2/piezo_mini.py" }
+        {
+          "src": "extensions/metronome/ext_metronome.py",
+          "dest": "ext_metronome.py"
+        },
+        {
+          "src": "extensions/metronome/Clockstar_v2/piezo_mini.py",
+          "dest": "Clockstar_v2/piezo_mini.py"
+        }
+      ]
+    },
+    {
+      "id": "ble_tools",
+      "name": "BLE tools",
+      "description": "Scan for nearby Bluetooth devices, and a control mode that sends commands (solve, scramble...) to a connected PC. Shows up in Settings.",
+      "default": false,
+      "module": "ext_ble_tools",
+      "files": [
+        {
+          "src": "extensions/ble_tools/ext_ble_tools.py",
+          "dest": "ext_ble_tools.py"
+        }
       ]
     }
   ]
