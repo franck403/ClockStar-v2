@@ -1134,6 +1134,7 @@
                   'info'
                 );
                 incomingBuffer += chunk;
+                lastRxAt = Date.now();
                 if (incomingBuffer.length > 16384) {
                   incomingBuffer = incomingBuffer.substring(
                     incomingBuffer.length - 8192
@@ -1761,6 +1762,46 @@
       // uses): DTR low keeps the boot pin high, RTS high pulls EN low (reset),
       // then RTS low releases it so the watch boots normally. Used when the
       // watch stops answering.
+      let lastRxAt = 0;
+      async function waitRxQuiet(quietMs, maxMs) {
+        const t0 = Date.now();
+        while (Date.now() - t0 < maxMs) {
+          if (Date.now() - lastRxAt >= quietMs) return true;
+          await new Promise((r) => setTimeout(r, 30));
+        }
+        return false;
+      }
+
+      // Right after entering the raw REPL (above all after a forced reboot)
+      // late bytes from the earlier Ctrl+C / Ctrl+A attempts can still be
+      // arriving, which shifts every later reply by one command. Wait for the
+      // line to go quiet, then run a tagged command until its own reply comes
+      // back, so the install starts perfectly in step with the watch.
+      async function syncRawRepl() {
+        for (let i = 0; i < 6; i++) {
+          await waitRxQuiet(300, 3000);
+          incomingBuffer = '';
+          await writeSerial("print('@@SYNC@@')\x04");
+          const t0 = Date.now();
+          while (Date.now() - t0 < 2500) {
+            const b = incomingBuffer;
+            const k = b.indexOf('@@SYNC@@');
+            if (k >= 0 && (b.slice(k).match(/\x04/g) || []).length >= 2) {
+              await new Promise((r) => setTimeout(r, 50));
+              await waitRxQuiet(150, 1000);
+              incomingBuffer = '';
+              logSerial('Raw REPL is in sync with the watch.', 'success');
+              return true;
+            }
+            await new Promise((r) => setTimeout(r, 30));
+          }
+          logSerial(`Raw REPL sync attempt ${i + 1}/6 got no clean reply, retrying...`, 'warn');
+          await writeSerial('\x03');
+        }
+        logSerial('Could not fully sync with the watch, continuing anyway.', 'warn');
+        return false;
+      }
+
       async function hardResetWatch() {
         if (!port) {
           logSerial('Force reboot: no watch connected.', 'error');
@@ -1836,6 +1877,7 @@
                 'Entered MicroPython Raw REPL mode successfully.',
                 'success'
               );
+              await syncRawRepl();
               return true;
             }
             if (
