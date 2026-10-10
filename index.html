@@ -343,12 +343,15 @@
 
             <!-- Everything you can do once connected -->
             <div id="controls" class="space-y-4">
-              <div id="actionsPanel" class="hidden grid grid-cols-3 gap-2">
+              <div id="actionsPanel" class="hidden grid grid-cols-4 gap-2">
                 <button id="optInstall" onclick="selectAction('install')" class="tab">
                   <i data-lucide="download-cloud" class="w-4 h-4"></i><span>Install</span>
                 </button>
                 <button id="optAddons" onclick="selectAction('addons')" class="tab">
                   <i data-lucide="puzzle" class="w-4 h-4"></i><span>Add-ons</span>
+                </button>
+                <button id="optIcons" onclick="selectAction('icons')" class="tab">
+                  <i data-lucide="paintbrush" class="w-4 h-4"></i><span>Icons</span>
                 </button>
                 <button id="optMpy" onclick="selectAction('mpy')" class="tab">
                   <i data-lucide="cpu" class="w-4 h-4"></i><span>MicroPython</span>
@@ -396,6 +399,30 @@
                   <i data-lucide="info" class="w-3.5 h-3.5 mt-0.5 shrink-0"></i>
                   <span>This only copies the add-on files, then restarts the watch. Add-ons you leave unticked are switched off, and the original buzzer driver comes back if you untick the Metronome.</span>
                 </p>
+              </div>
+
+              <!-- Icons -->
+              <div id="iconsPanel" class="hidden card space-y-4">
+                <div>
+                  <h3 class="text-lg font-semibold text-white">Icons</h3>
+                  <p class="mt-1 text-sm text-slate-400 leading-relaxed">
+                    Redraw the battery, phone, slider and the clock
+                    backgrounds, or import your own pictures. Changes are
+                    kept in this browser and also go along with a full install.
+                  </p>
+                </div>
+                <div class="flex items-center justify-between gap-3 text-sm bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3">
+                  <span class="text-slate-400">Changed icons: <span id="iconsCount" class="text-slate-100">none</span></span>
+                  <button onclick="resetAllIcons()" class="text-slate-400 hover:text-slate-200 text-sm font-medium">Reset all</button>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <button onclick="openIconEditor()" class="btn btn-ghost">
+                    <i data-lucide="paintbrush" class="w-4 h-4"></i><span>Open editor</span>
+                  </button>
+                  <button id="installIconsBtn" onclick="installIcons()" class="btn btn-primary">
+                    <i data-lucide="download-cloud" class="w-4 h-4"></i><span>Install icons</span>
+                  </button>
+                </div>
               </div>
 
               <!-- MicroPython -->
@@ -516,6 +543,81 @@
       </div>
     </main>
 
+    <!-- Icon editor (full-screen) -->
+    <div id="iconEditor" class="hidden fixed inset-0 z-[70] bg-slate-950 flex flex-col">
+      <div class="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-800">
+        <div>
+          <div class="font-semibold text-white">Icon editor</div>
+          <div class="text-xs text-slate-500">Change the watch's icons and backgrounds, then install them.</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="edInstallBtn" onclick="installIcons()" class="btn btn-primary btn-sm">
+            <i data-lucide="download-cloud" class="w-4 h-4"></i><span>Install to watch</span>
+          </button>
+          <button onclick="closeIconEditor()" title="Close" class="btn btn-ghost btn-sm !px-3">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 min-h-0 flex flex-col lg:flex-row">
+        <aside id="edList" class="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-800 overflow-y-auto custom-scrollbar p-3 space-y-1.5 max-h-40 lg:max-h-none"></aside>
+        <section class="flex-1 min-w-0 min-h-0 flex flex-col p-4">
+          <div id="edStage" class="flex-1 min-h-0 flex overflow-auto rounded-xl border border-slate-800 bg-[#05080d] custom-scrollbar">
+            <canvas id="edCanvas" class="m-auto" style="image-rendering: pixelated; touch-action: none; cursor: crosshair"></canvas>
+          </div>
+          <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
+            <span id="edInfo"></span>
+            <span id="edPos" class="tabular-nums"></span>
+          </div>
+        </section>
+        <aside class="lg:w-72 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-800 overflow-y-auto custom-scrollbar p-4 space-y-5">
+          <div>
+            <div class="text-xs font-semibold tracking-wider text-slate-400 uppercase mb-2">Tools</div>
+            <div class="grid grid-cols-4 gap-2">
+              <button data-tool="pen" onclick="edSetTool('pen')" title="Pencil (P)" class="tab !px-0"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+              <button data-tool="erase" onclick="edSetTool('erase')" title="Eraser, paints black (E)" class="tab !px-0"><i data-lucide="eraser" class="w-4 h-4"></i></button>
+              <button data-tool="fill" onclick="edSetTool('fill')" title="Fill (F)" class="tab !px-0"><i data-lucide="paint-bucket" class="w-4 h-4"></i></button>
+              <button data-tool="pick" onclick="edSetTool('pick')" title="Pick a color (I)" class="tab !px-0"><i data-lucide="pipette" class="w-4 h-4"></i></button>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold tracking-wider text-slate-400 uppercase mb-2">Color</div>
+            <div class="flex items-center gap-3">
+              <input id="edColor" type="color" value="#ffffff" class="w-12 h-10 rounded-lg bg-transparent border border-slate-700 cursor-pointer" />
+              <span id="edColorHex" class="font-mono text-xs text-slate-400">#FFFFFF</span>
+            </div>
+            <div id="edSwatches" class="mt-3 grid grid-cols-8 gap-1.5"></div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold tracking-wider text-slate-400 uppercase mb-2">View</div>
+            <div class="flex items-center gap-2">
+              <button onclick="edZoom(-1)" class="btn btn-ghost btn-sm !px-3" title="Zoom out"><i data-lucide="zoom-out" class="w-4 h-4"></i></button>
+              <button onclick="edZoom(0)" class="btn btn-ghost btn-sm" title="Fit to window">Fit</button>
+              <button onclick="edZoom(1)" class="btn btn-ghost btn-sm !px-3" title="Zoom in"><i data-lucide="zoom-in" class="w-4 h-4"></i></button>
+              <button id="edGridBtn" onclick="edToggleGrid()" class="btn btn-ghost btn-sm !px-3" title="Pixel grid"><i data-lucide="grid-3x3" class="w-4 h-4"></i></button>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold tracking-wider text-slate-400 uppercase mb-2">Edit</div>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="edUndo()" class="btn btn-ghost btn-sm"><i data-lucide="undo-2" class="w-4 h-4"></i>Undo</button>
+              <button onclick="edRedo()" class="btn btn-ghost btn-sm"><i data-lucide="redo-2" class="w-4 h-4"></i>Redo</button>
+              <button onclick="edImportClick()" class="btn btn-ghost btn-sm col-span-2"><i data-lucide="image-up" class="w-4 h-4"></i>Import a picture or .spr</button>
+              <button onclick="edExport()" class="btn btn-ghost btn-sm"><i data-lucide="download" class="w-4 h-4"></i>Save .spr</button>
+              <button onclick="edResetCurrent()" class="btn btn-ghost btn-sm"><i data-lucide="rotate-ccw" class="w-4 h-4"></i>Reset</button>
+            </div>
+            <input id="edFile" type="file" accept="image/*,.spr" class="hidden" />
+          </div>
+          <p class="text-xs text-slate-500 leading-relaxed">
+            Colors are rounded to what the watch screen can show (RGB565).
+            Pure black is see-through on icons. Each icon keeps its size, so
+            the layout on the watch stays the same. A picture you import is
+            scaled to fit.
+          </p>
+        </aside>
+      </div>
+    </div>
+
     <!-- Logs drawer -->
     <div
       id="terminalPanel"
@@ -603,6 +705,9 @@
       ];
       // Combined manifest used by the installer loop. Each entry carries
       // its destination path on the watch (relative to filesystem root).
+      // Icons edited in the icon editor: destPath -> .spr bytes. They replace the
+      // repo version on every install.
+      const customSprites = new Map();
       const INSTALL_FILES = [
         ...INSTALL_FILES_ROOT.map((f) => ({ repoPath: f, destPath: f })),
       ];
@@ -727,6 +832,13 @@
       // Core files + selected extension files (extensions override core on
       // the same dest) + a generated extensions.json for the watch.
       function buildInstallList(mode = 'full') {
+        if (mode === 'icons') {
+          return [...customSprites.entries()].map(([destPath, data]) => ({
+            generated: true,
+            destPath,
+            data,
+          }));
+        }
         const map = new Map();
         const selected = getSelectedExtensions();
         if (mode === 'extensions') {
@@ -1144,11 +1256,13 @@
       const ACTION_PANELS = {
         install: 'installPanel',
         addons: 'addonsPanel',
+        icons: 'iconsPanel',
         mpy: 'mpyFlashPanel',
       };
       const ACTION_BUTTONS = {
         install: 'optInstall',
         addons: 'optAddons',
+        icons: 'optIcons',
         mpy: 'optMpy',
       };
 
@@ -1208,6 +1322,7 @@
           'installExtBtn',
           'optInstall',
           'optAddons',
+          'optIcons',
           'optMpy',
         ]) {
           const el = document.getElementById(id);
@@ -1899,7 +2014,9 @@
         logSerial(
           mode === 'extensions'
             ? '=== Installing add-ons only ==='
-            : '=== Starting ClockStar v2 Installation ===',
+            : mode === 'icons'
+              ? '=== Installing custom icons ==='
+              : '=== Starting ClockStar v2 Installation ===',
           'cmd'
         );
 
@@ -1934,9 +2051,9 @@
             const destPath = item.destPath;
 
             if (item.generated) {
-              const generatedData = new TextEncoder().encode(item.content);
+              const generatedData = item.data || new TextEncoder().encode(item.content);
               logSerial(
-                `Writing ${destPath} (${generatedData.length} bytes, generated)...`,
+                `Writing ${destPath} (${generatedData.length} bytes, ${item.data ? 'custom icon' : 'generated'})...`,
                 'info'
               );
               await writeFileToWatch(destPath, generatedData);
@@ -1970,6 +2087,15 @@
                 updateProgress(completed, total, 'Installing...', startTime);
                 continue;
               }
+            }
+
+            if (customSprites.has(destPath)) {
+              const customData = customSprites.get(destPath);
+              logSerial(`Writing ${destPath} (${customData.length} bytes, your custom icon)...`, 'info');
+              await writeFileToWatch(destPath, customData);
+              completed++;
+              updateProgress(completed, total, 'Installing...', startTime);
+              continue;
             }
 
             // Cache-bust query param defeats the browser's own HTTP cache
@@ -2078,7 +2204,9 @@
             );
             setWatchMode('done');
             showNotification(
-              'All done! Your ClockStar v2 is running the latest firmware.',
+              mode === 'icons'
+                ? 'Your icons are on the watch.'
+                : 'All done! Your ClockStar v2 is running the latest firmware.',
               'success'
             );
             _setMainCard(
@@ -2175,6 +2303,484 @@
       window.chooseFirmwarePath = chooseFirmwarePath;
       window.skipMicroPythonFlash = skipMicroPythonFlash;
       window.flashMicroPython = flashMicroPython;
+    </script>
+    <script>
+      // ==========================================
+      // ICON EDITOR (.spr sprites: 4-byte header w,h u16 LE + RGB565 big-endian)
+      // ==========================================
+      const SPRITE_LIST = [
+        { path: 'clock_bg.spr', label: 'Clock background' },
+        { path: 'control_bg.spr', label: 'Control mode background' },
+        { path: 'icons/batt_full.spr', label: 'Battery: full' },
+        { path: 'icons/batt_half.spr', label: 'Battery: half' },
+        { path: 'icons/batt_low.spr', label: 'Battery: low' },
+        { path: 'icons/batt_critical.spr', label: 'Battery: critical' },
+        { path: 'icons/batt_charging.spr', label: 'Battery: charging bolt' },
+        { path: 'icons/phone_connected.spr', label: 'Phone connected' },
+        { path: 'icons/settings_slider.spr', label: 'Settings slider knob' },
+        { path: 'icons/settings_slider_track.spr', label: 'Settings slider track' },
+      ];
+      const ICONS_STORAGE_KEY = 'clockstar_icons';
+      const edSprites = {}; // path -> { w, h, orig, cur }
+      let edLoaded = false;
+      let edPath = null;
+      let edTool = 'pen';
+      let edScaleManual = null;
+      let edGrid = true;
+      let edColor565 = 0xffff;
+      let edRecent = [];
+      let edUndoStack = [];
+      let edRedoStack = [];
+      let edDrawing = false;
+      let edLast = null;
+      const edOff = document.createElement('canvas');
+
+      const ed = (id) => document.getElementById(id);
+      const edTo565 = (r, g, b) => ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+      function edFrom565(v) {
+        const r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
+        return [(r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2)];
+      }
+      const edHex = (v) =>
+        '#' + edFrom565(v).map((x) => x.toString(16).padStart(2, '0')).join('');
+
+      function edParse(bytes) {
+        if (bytes.length < 4) throw new Error('file too short');
+        const w = bytes[0] | (bytes[1] << 8);
+        const h = bytes[2] | (bytes[3] << 8);
+        if (!w || !h || bytes.length < 4 + w * h * 2)
+          throw new Error('not a valid .spr file');
+        const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const px = new Uint16Array(w * h);
+        for (let i = 0; i < px.length; i++) px[i] = dv.getUint16(4 + i * 2, false);
+        return { w, h, px };
+      }
+
+      function edToBytes(s, px) {
+        const out = new Uint8Array(4 + px.length * 2);
+        out[0] = s.w & 255; out[1] = s.w >> 8; out[2] = s.h & 255; out[3] = s.h >> 8;
+        const dv = new DataView(out.buffer);
+        for (let i = 0; i < px.length; i++) dv.setUint16(4 + i * 2, px[i], false);
+        return out;
+      }
+
+      const edB64 = (u8) => {
+        let s = '';
+        for (let i = 0; i < u8.length; i += 4096)
+          s += String.fromCharCode.apply(null, u8.subarray(i, i + 4096));
+        return btoa(s);
+      };
+      const edUnB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+      function edPersist() {
+        try {
+          const o = {};
+          for (const [p, d] of customSprites) o[p] = edB64(d);
+          localStorage.setItem(ICONS_STORAGE_KEY, JSON.stringify(o));
+        } catch (e) {}
+      }
+
+      function edRestore() {
+        try {
+          const o = JSON.parse(localStorage.getItem(ICONS_STORAGE_KEY) || '{}');
+          for (const p of Object.keys(o)) customSprites.set(p, edUnB64(o[p]));
+        } catch (e) {}
+        edUpdateSummary();
+      }
+
+      function edUpdateSummary() {
+        const el = ed('iconsCount');
+        if (!el) return;
+        const names = SPRITE_LIST.filter((s) => customSprites.has(s.path)).map((s) => s.label);
+        el.textContent = names.length ? names.length + ' (' + names.join(', ') + ')' : 'none';
+      }
+
+      async function edLoadAll() {
+        if (edLoaded) return;
+        for (const item of SPRITE_LIST) {
+          try {
+            const res = await fetch(REPO_BASE + item.path + '?t=' + Date.now(), { cache: 'no-store' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const orig = edParse(new Uint8Array(await res.arrayBuffer()));
+            const s = { w: orig.w, h: orig.h, orig: orig.px, cur: orig.px.slice() };
+            if (customSprites.has(item.path)) {
+              try {
+                const c = edParse(customSprites.get(item.path));
+                if (c.w === s.w && c.h === s.h) s.cur = c.px;
+              } catch (e) {}
+            }
+            edSprites[item.path] = s;
+          } catch (e) {
+            logSerial(`Couldn't load ${item.path}: ${e.message}`, 'warn');
+          }
+        }
+        edLoaded = true;
+      }
+
+      function edRenderList() {
+        const list = ed('edList');
+        list.innerHTML = '';
+        for (const item of SPRITE_LIST) {
+          const s = edSprites[item.path];
+          if (!s) continue;
+          const b = document.createElement('button');
+          b.className = 'opt !p-2.5 !gap-3' + (item.path === edPath ? ' selected' : '');
+          const c = document.createElement('canvas');
+          const m = Math.max(s.w, s.h);
+          const sc = m >= 44 ? 44 / m : Math.max(1, Math.floor(44 / m));
+          c.width = s.w; c.height = s.h;
+          c.style.cssText = `width:${Math.round(s.w * sc)}px;height:${Math.round(s.h * sc)}px;image-rendering:pixelated;background:#000;flex-shrink:0;border-radius:3px`;
+          edPaint(c.getContext('2d'), s);
+          const box = document.createElement('span');
+          box.className = 'w-11 h-11 flex items-center justify-center shrink-0';
+          box.appendChild(c);
+          const t = document.createElement('span');
+          t.className = 'opt-text';
+          t.innerHTML = `<span class="opt-title !text-[0.85rem]">${item.label}</span><span class="opt-desc">${s.w}×${s.h}${customSprites.has(item.path) ? ' · <span class="text-cyan-400">changed</span>' : ''}</span>`;
+          b.append(box, t);
+          b.onclick = () => edSelect(item.path);
+          list.appendChild(b);
+        }
+      }
+
+      function edPaint(ctx2d, s) {
+        const img = ctx2d.createImageData(s.w, s.h);
+        for (let i = 0; i < s.cur.length; i++) {
+          const [r, g, b] = edFrom565(s.cur[i]);
+          img.data[i * 4] = r; img.data[i * 4 + 1] = g; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = 255;
+        }
+        ctx2d.putImageData(img, 0, 0);
+      }
+
+      function edScale(s) {
+        if (edScaleManual) return edScaleManual;
+        const stage = ed('edStage');
+        const k = Math.floor(Math.min((stage.clientWidth - 24) / s.w, (stage.clientHeight - 24) / s.h));
+        return Math.max(1, Math.min(32, k));
+      }
+
+      function edRedraw() {
+        const s = edSprites[edPath];
+        if (!s) return;
+        const k = edScale(s);
+        const cv = ed('edCanvas');
+        cv.width = s.w * k; cv.height = s.h * k;
+        edOff.width = s.w; edOff.height = s.h;
+        edPaint(edOff.getContext('2d'), s);
+        const c = cv.getContext('2d');
+        c.imageSmoothingEnabled = false;
+        c.drawImage(edOff, 0, 0, cv.width, cv.height);
+        if (edGrid && k >= 6) {
+          c.strokeStyle = 'rgba(255,255,255,0.12)';
+          c.lineWidth = 1;
+          c.beginPath();
+          for (let x = 1; x < s.w; x++) { c.moveTo(x * k + 0.5, 0); c.lineTo(x * k + 0.5, cv.height); }
+          for (let y = 1; y < s.h; y++) { c.moveTo(0, y * k + 0.5); c.lineTo(cv.width, y * k + 0.5); }
+          c.stroke();
+        }
+        const item = SPRITE_LIST.find((i) => i.path === edPath);
+        ed('edInfo').textContent = `${item.label} · ${s.w}×${s.h} px · ${k}× zoom`;
+      }
+
+      function edSelect(path) {
+        edPath = path;
+        edUndoStack = []; edRedoStack = [];
+        edRenderList();
+        edRedraw();
+      }
+
+      function edSame(a, b) {
+        if (a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+        return true;
+      }
+
+      function edCommit() {
+        const s = edSprites[edPath];
+        if (edSame(s.cur, s.orig)) customSprites.delete(edPath);
+        else customSprites.set(edPath, edToBytes(s, s.cur));
+        edPersist();
+        edUpdateSummary();
+        edRenderList();
+      }
+
+      function edSnapshot() {
+        const s = edSprites[edPath];
+        edUndoStack.push(s.cur.slice());
+        if (edUndoStack.length > 60) edUndoStack.shift();
+        edRedoStack = [];
+      }
+      function edUndo() {
+        const s = edSprites[edPath];
+        if (!s || !edUndoStack.length) return;
+        edRedoStack.push(s.cur.slice());
+        s.cur = edUndoStack.pop();
+        edRedraw(); edCommit();
+      }
+      function edRedo() {
+        const s = edSprites[edPath];
+        if (!s || !edRedoStack.length) return;
+        edUndoStack.push(s.cur.slice());
+        s.cur = edRedoStack.pop();
+        edRedraw(); edCommit();
+      }
+
+      function edSetTool(t) {
+        edTool = t;
+        document.querySelectorAll('[data-tool]').forEach((b) =>
+          b.classList.toggle('selected', b.dataset.tool === t)
+        );
+      }
+
+      function edSetColor(v565, remember) {
+        edColor565 = v565;
+        const hex = edHex(v565);
+        ed('edColor').value = hex;
+        ed('edColorHex').textContent = hex.toUpperCase();
+        if (remember) {
+          edRecent = [v565, ...edRecent.filter((x) => x !== v565)].slice(0, 16);
+          edRenderSwatches();
+        }
+      }
+
+      const ED_BASE = [0xffff, 0x0000, 0x8410, 0xf800, 0xfd20, 0xffe0, 0x07e0, 0x07ff, 0x001f, 0x781f, 0xf81f, 0x7bef, 0x4208, 0xc618, 0x8200, 0x0400];
+      function edRenderSwatches() {
+        const box = ed('edSwatches');
+        box.innerHTML = '';
+        for (const v of [...ED_BASE, ...edRecent]) {
+          const b = document.createElement('button');
+          b.className = 'aspect-square rounded-md border border-slate-700 hover:border-cyan-400';
+          b.style.background = edHex(v);
+          b.title = edHex(v).toUpperCase();
+          b.onclick = () => edSetColor(v, false);
+          box.appendChild(b);
+        }
+      }
+
+      function edZoom(d) {
+        const s = edSprites[edPath];
+        if (!s) return;
+        if (d === 0) edScaleManual = null;
+        else edScaleManual = Math.max(1, Math.min(48, (edScaleManual || edScale(s)) + d * (edScale(s) >= 8 ? 2 : 1)));
+        edRedraw();
+      }
+      function edToggleGrid() { edGrid = !edGrid; edRedraw(); }
+
+      function edPixelAt(ev) {
+        const s = edSprites[edPath];
+        const r = ed('edCanvas').getBoundingClientRect();
+        const x = Math.floor(((ev.clientX - r.left) / r.width) * s.w);
+        const y = Math.floor(((ev.clientY - r.top) / r.height) * s.h);
+        return { x, y, ok: x >= 0 && y >= 0 && x < s.w && y < s.h };
+      }
+
+      function edPlot(x, y) {
+        const s = edSprites[edPath];
+        if (x < 0 || y < 0 || x >= s.w || y >= s.h) return;
+        s.cur[y * s.w + x] = edTool === 'erase' ? 0 : edColor565;
+      }
+
+      function edLine(a, b) {
+        let { x: x0, y: y0 } = a;
+        const { x: x1, y: y1 } = b;
+        const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
+        const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+        let err = dx + dy;
+        for (;;) {
+          edPlot(x0, y0);
+          if (x0 === x1 && y0 === y1) break;
+          const e2 = 2 * err;
+          if (e2 >= dy) { err += dy; x0 += sx; }
+          if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+      }
+
+      function edFill(x, y) {
+        const s = edSprites[edPath];
+        const target = s.cur[y * s.w + x];
+        const val = edColor565;
+        if (target === val) return;
+        const stack = [[x, y]];
+        while (stack.length) {
+          const [cx, cy] = stack.pop();
+          if (cx < 0 || cy < 0 || cx >= s.w || cy >= s.h) continue;
+          if (s.cur[cy * s.w + cx] !== target) continue;
+          s.cur[cy * s.w + cx] = val;
+          stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+        }
+      }
+
+      function edBindCanvas() {
+        const cv = ed('edCanvas');
+        cv.addEventListener('pointerdown', (ev) => {
+          const s = edSprites[edPath];
+          if (!s) return;
+          const p = edPixelAt(ev);
+          if (!p.ok) return;
+          ev.preventDefault();
+          if (edTool === 'pick') {
+            edSetColor(s.cur[p.y * s.w + p.x], true);
+            edSetTool('pen');
+            return;
+          }
+          cv.setPointerCapture(ev.pointerId);
+          edSnapshot();
+          if (edTool === 'fill') {
+            edFill(p.x, p.y);
+            edRedraw(); edCommit();
+            return;
+          }
+          edDrawing = true;
+          edLast = p;
+          edPlot(p.x, p.y);
+          if (edTool === 'pen') edSetColor(edColor565, true);
+          edRedraw();
+        });
+        cv.addEventListener('pointermove', (ev) => {
+          const s = edSprites[edPath];
+          if (!s) return;
+          const p = edPixelAt(ev);
+          ed('edPos').textContent = p.ok ? `x ${p.x}, y ${p.y}  ${edHex(s.cur[p.y * s.w + p.x]).toUpperCase()}` : '';
+          if (!edDrawing) return;
+          edLine(edLast, p);
+          edLast = p;
+          edRedraw();
+        });
+        const end = () => {
+          if (!edDrawing) return;
+          edDrawing = false;
+          edCommit();
+        };
+        cv.addEventListener('pointerup', end);
+        cv.addEventListener('pointercancel', end);
+        cv.addEventListener('pointerleave', () => { ed('edPos').textContent = ''; });
+      }
+
+      function edImportClick() { ed('edFile').click(); }
+
+      async function edImportFile(file) {
+        const s = edSprites[edPath];
+        if (!file || !s) return;
+        try {
+          if (/\.spr$/i.test(file.name)) {
+            const p = edParse(new Uint8Array(await file.arrayBuffer()));
+            if (p.w !== s.w || p.h !== s.h)
+              throw new Error(`size is ${p.w}×${p.h}, this icon is ${s.w}×${s.h}`);
+            edSnapshot();
+            s.cur = p.px;
+          } else {
+            const bmp = await createImageBitmap(file);
+            const c = document.createElement('canvas');
+            c.width = s.w; c.height = s.h;
+            const g = c.getContext('2d', { willReadFrequently: true });
+            g.imageSmoothingQuality = 'high';
+            const k = Math.min(s.w / bmp.width, s.h / bmp.height);
+            const dw = Math.max(1, Math.round(bmp.width * k));
+            const dh = Math.max(1, Math.round(bmp.height * k));
+            g.drawImage(bmp, Math.floor((s.w - dw) / 2), Math.floor((s.h - dh) / 2), dw, dh);
+            const d = g.getImageData(0, 0, s.w, s.h).data;
+            edSnapshot();
+            for (let i = 0; i < s.w * s.h; i++) {
+              const a = d[i * 4 + 3];
+              s.cur[i] = a < 128 ? 0 : edTo565(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]);
+            }
+          }
+          edRedraw(); edCommit();
+        } catch (e) {
+          showNotification(`Couldn't import that file: ${e.message}`, 'error');
+        }
+      }
+
+      function edExport() {
+        const s = edSprites[edPath];
+        if (!s) return;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([edToBytes(s, s.cur)], { type: 'application/octet-stream' }));
+        a.download = edPath.split('/').pop();
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }
+
+      function edResetCurrent() {
+        const s = edSprites[edPath];
+        if (!s) return;
+        edSnapshot();
+        s.cur = s.orig.slice();
+        edRedraw(); edCommit();
+      }
+
+      function resetAllIcons() {
+        customSprites.clear();
+        for (const p of Object.keys(edSprites)) edSprites[p].cur = edSprites[p].orig.slice();
+        edPersist();
+        edUpdateSummary();
+        if (!ed('iconEditor').classList.contains('hidden')) { edRenderList(); edRedraw(); }
+        showNotification('All icons are back to the originals.', 'info');
+      }
+
+      async function openIconEditor() {
+        ed('iconEditor').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        if (!edLoaded) {
+          ed('edInfo').textContent = 'Loading icons...';
+          await edLoadAll();
+        }
+        if (!edPath || !edSprites[edPath]) edPath = SPRITE_LIST.find((s) => edSprites[s.path]).path;
+        edRenderList();
+        edRedraw();
+        lucide.createIcons();
+      }
+
+      function closeIconEditor() {
+        ed('iconEditor').classList.add('hidden');
+        document.body.style.overflow = '';
+      }
+
+      async function installIcons() {
+        if (!port) {
+          showNotification('Connect your watch first, then install the icons.', 'error');
+          return;
+        }
+        if (!customSprites.size) {
+          showNotification('No icon has been changed yet. Open the editor and edit one first.', 'info');
+          return;
+        }
+        closeIconEditor();
+        await startInstallation('icons');
+      }
+
+      window.addEventListener('resize', () => {
+        if (!ed('iconEditor').classList.contains('hidden')) edRedraw();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (ed('iconEditor').classList.contains('hidden')) return;
+        if (e.key === 'Escape') { closeIconEditor(); return; }
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); edUndo(); return; }
+        if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); edRedo(); return; }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const m = { p: 'pen', e: 'erase', f: 'fill', i: 'pick' }[e.key.toLowerCase()];
+        if (m) edSetTool(m);
+      }, true);
+      ed('edColor').addEventListener('input', (e) => {
+        const h = e.target.value;
+        edSetColor(edTo565(parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)), false);
+      });
+      ed('edFile').addEventListener('change', (e) => {
+        edImportFile(e.target.files[0]);
+        e.target.value = '';
+      });
+
+      edBindCanvas();
+      edSetTool('pen');
+      edSetColor(0xffff, false);
+      edRenderSwatches();
+      edRestore();
+      window.openIconEditor = openIconEditor;
+      window.closeIconEditor = closeIconEditor;
+      window.installIcons = installIcons;
+      window.resetAllIcons = resetAllIcons;
+      Object.assign(window, { edSetTool, edZoom, edToggleGrid, edUndo, edRedo, edImportClick, edExport, edResetCurrent });
+      lucide.createIcons();
     </script>
   </body>
 </html>

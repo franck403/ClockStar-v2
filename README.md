@@ -40,6 +40,8 @@ clock_bg.spr        Clock face background sprite
 
 ## Flashing
 
+**Icon editor:** the installer's *Icons* tab opens a pixel editor for every `.spr` (clock and control backgrounds, battery, phone, slider). Draw, fill, import a picture or a `.spr`, then *Install icons* (only the changed sprites are copied). Edits are kept in the browser and also go along with a full install. Each icon keeps its size. `spr-converter.html` still converts whole images.
+
 **MicroPython version:** I recommend **MicroPython 1.29** (the one I use, it works best). Get the ESP32-S3 build from https://micropython.org/download/ESP32_GENERIC_S3/ and flash it from the installer's *MicroPython* tab.
 
 A browser-based installer (Web Serial API) is available for flashing this firmware without any local tooling — just Chrome/Edge, a USB-C cable, and the watch. It fetches every file from this repo, opens a MicroPython Raw REPL session over serial, and writes each file to the device.
