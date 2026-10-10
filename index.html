@@ -2252,11 +2252,16 @@
             "import os, ubinascii\ntry:\n os.mkdir('icons')\nexcept:\n pass\ntry:\n os.mkdir('Clockstar_v2')\nexcept:\n pass\n"
           );
 
-          // Always find the fastest packet size that works on this watch.
-          await runSpeedTest();
-
           const installList = buildInstallList(mode);
           const total = installList.length;
+
+          // Put a progress screen on the watch itself (battery + USB + file
+          // name + bar). Non-fatal: if it can't start, the install goes on.
+          await watchUiStart(total);
+
+          // Always find the fastest packet size that works on this watch.
+          await watchUiUpdate(0, total, 'Testing link', 0, 'Speed test');
+          await runSpeedTest();
           logSerial(
             'Extensions: ' +
               (getSelectedExtensions().map((e) => e.name).join(', ') ||
@@ -2270,6 +2275,7 @@
           for (let item of installList) {
             const repoPath = item.repoPath;
             const destPath = item.destPath;
+            await watchUiUpdate(completed, total, destPath);
 
             if (item.generated) {
               const generatedData = item.data || new TextEncoder().encode(item.content);
@@ -2389,6 +2395,8 @@
           }
           }
 
+          await watchUiFinish(true, 'Restarting...');
+
           logSerial('=== Rebooting watch to verify install ===', 'cmd');
           incomingBuffer = '';
           await exitRawRepl();
@@ -2438,6 +2446,7 @@
             );
           }
         } catch (err) {
+          await watchUiFinish(false, err.message);
           logSerial(
             `Fatal Installation Error: ${err.name || 'Error'} - ${err.message}`,
             'error'
@@ -2471,10 +2480,111 @@
         }
       }
 
+      // ==========================================
+      // PROGRESS SCREEN ON THE WATCH
+      // ==========================================
+      // python/install_ui.py is copied first and drives the watch display
+      // while everything else is written: title, file name, progress bar,
+      // battery level (BATT_READ, IO10) and USB power (USB_DETECT, IO36).
+      // Every call is best-effort: one failure turns the screen off for the
+      // rest of the run and the install itself carries on.
+      let watchUi = false;
+      let uiTotal = 0;
+      let uiDone = 0;
+      let uiName = '';
+
+      async function watchUiRun(code) {
+        if (!watchUi) return '';
+        try {
+          return await execRawReplCommand(code);
+        } catch (e) {
+          watchUi = false;
+          logSerial(
+            `Watch screen stopped (${e.message}). The install continues without it.`,
+            'warn'
+          );
+          return '';
+        }
+      }
+
+      async function watchUiStart(total) {
+        watchUi = false;
+        uiTotal = total;
+        uiDone = 0;
+        uiName = '';
+        try {
+          const res = await fetch(REPO_BASE + 'install_ui.py?t=' + Date.now(), {
+            cache: 'no-store',
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status} fetching install_ui.py`);
+          const bytes = new TextEncoder().encode(await res.text());
+          await writeFileToWatch('install_ui.py', bytes, true);
+          watchUi = true;
+          const out = await execRawReplCommand(
+            'import sys\nsys.modules.pop("install_ui", None)\nimport install_ui as ui\nui.begin(' +
+              total +
+              ')\n'
+          );
+          const m = out.match(/UI_OK (\d+) (\d+) (\d+)/);
+          if (!m) {
+            throw new Error(
+              'the screen did not start: ' + out.replace(/[\x00-\x1f]/g, ' ').trim().slice(0, 160)
+            );
+          }
+          const pct = parseInt(m[1], 10);
+          const usb = m[2] === '1';
+          const volts = (parseInt(m[3], 10) / 1000).toFixed(2);
+          logSerial(
+            `Watch battery: ${pct}% (${volts} V), USB power ${usb ? 'detected' : 'NOT detected'}.`,
+            usb || pct >= 30 ? 'info' : 'warn'
+          );
+          if (!usb && pct < 20) {
+            showNotification(
+              `The watch battery is low (${pct}%) and no USB power is detected. Plug it in: losing power while files are being copied can corrupt them.`,
+              'error'
+            );
+          }
+        } catch (e) {
+          watchUi = false;
+          logSerial(
+            `Couldn't start the progress screen on the watch (${e.message}). Installing without it.`,
+            'warn'
+          );
+        }
+      }
+
+      async function watchUiUpdate(done, total, name, frac = 0, title = null) {
+        if (!watchUi) return;
+        uiDone = done;
+        uiTotal = total;
+        uiName = name;
+        const pct = Math.max(
+          0,
+          Math.min(100, Math.round(((done + frac) / Math.max(1, total)) * 100))
+        );
+        const safe = (s) => JSON.stringify(String(s).replace(/[^\x20-\x7e]/g, '?'));
+        await watchUiRun(
+          `ui.update(${pct}, ${safe(name)}, ${done}, ${total}` +
+            (title ? `, title=${safe(title)}` : '') +
+            ')\n'
+        );
+      }
+
+      async function watchUiFinish(ok, msg) {
+        if (!watchUi) return;
+        const safe = (s) =>
+          JSON.stringify(String(s).replace(/[^\x20-\x7e]/g, '?').slice(0, 16));
+        await watchUiRun(
+          ok ? `ui.done(${safe(msg)})\n` : `ui.fail(${safe(msg)})\n`
+        );
+        watchUi = false;
+      }
+
       async function writeFileToWatch(filename, uint8Data, quiet = false) {
         await execRawReplCommand(`f = open('${filename}', 'wb')`);
 
         const chunkSize = transfer.chunk;
+        let nextUi = 0.25;
         for (let i = 0; i < uint8Data.length; i += chunkSize) {
           const chunk = uint8Data.subarray(i, i + chunkSize);
           let binaryString = '';
@@ -2488,6 +2598,15 @@
 
           await execRawReplCommand(`f.write(ubinascii.a2b_base64('${b64}'))`);
           bytesSent += chunk.length;
+
+          // big files: move the watch's progress bar while the file is copied
+          if (watchUi && !quiet && uint8Data.length > 4096) {
+            const frac = (i + chunk.length) / uint8Data.length;
+            if (frac >= nextUi && frac < 1) {
+              nextUi = frac + 0.25;
+              await watchUiUpdate(uiDone, uiTotal, uiName, frac);
+            }
+          }
 
           if (transfer.chunkDelay > 0) {
             await new Promise((r) => setTimeout(r, transfer.chunkDelay));

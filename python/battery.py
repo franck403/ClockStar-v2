@@ -1,11 +1,15 @@
 import time
 from machine import ADC, Pin
 
-BATTERY_PIN = 8
+# Clockstar 2.0 schematic: BATT_READ is IO10 (pin 8 is the RGB red LED).
+# BATT -> 3x20k / 20k divider (x4), then ADC1. 2.5 dB attenuation covers the
+# 0..~1.05 V that reaches the pin at 4.2 V battery.
+BATTERY_PIN = 10
 adc = ADC(Pin(BATTERY_PIN))
-adc.atten(ADC.ATTN_11DB)
+adc.atten(ADC.ATTN_2_5DB)
 
-VOLTAGE_DIVIDER_RATIO = 2.0
+VOLTAGE_DIVIDER_RATIO = 4.0
+VOLTAGE_OFFSET_V = 0.075    # same read offset as the stock firmware
 TOTAL_CAPACITY_MAH = 600
 
 LEVEL_CRITICAL = 0
@@ -70,7 +74,7 @@ def get_battery_voltage():
     uv_avg = uv_sum / 32.0
 
     measured_v = uv_avg / 1_000_000.0
-    return measured_v * VOLTAGE_DIVIDER_RATIO
+    return measured_v * VOLTAGE_DIVIDER_RATIO + VOLTAGE_OFFSET_V
 
 
 def get_battery_percentage(voltage=None):
