@@ -1091,14 +1091,7 @@
               err.name === 'InvalidStateError' ||
               (port && !port.writable)
             ) {
-              logSerial(
-                'Serial device appears to have disconnected (USB-CDC drop or device reset). Forcing local disconnect state.',
-                'warn'
-              );
-              readLoopActive = false;
-              await _releasePersistentWriter();
-              port = null;
-              updateConnectionUI(false);
+              await handleDeviceLost(err.name || 'write error');
             }
             throw err;
           }
@@ -1150,6 +1143,9 @@
                 }`,
                 'warn'
               );
+              if (err.name === 'NetworkError') {
+                setTimeout(() => handleDeviceLost('read error'), 0);
+              }
             }
           } finally {
             if (reader) {
@@ -1340,7 +1336,8 @@
 
       async function handleMainAction() {
         if (!port) {
-          await connectWatch();
+          if (connectionLost) await reconnectWatch();
+          else await connectWatch();
         } else if (watchReady && !isFlashing) {
           await startInstallation();
         }
@@ -1355,7 +1352,119 @@
           : 'Hide Logs';
       }
 
-      async function connectWatch() {
+      // ==========================================
+      // LOST CONNECTION / RECONNECT (no page reload needed)
+      // ==========================================
+      let lastPort = null; // the watch's port, kept so we can reopen it
+      let connectionLost = false; // true after an unexpected drop
+      let softReconnecting = false; // true while a forced reboot re-plugs the USB
+      let reconnecting = false;
+      const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      async function _openPort(p, tries) {
+        for (let i = 0; i < tries; i++) {
+          try {
+            await p.open({ baudRate: 57600 });
+            return;
+          } catch (e) {
+            if (e.name === 'InvalidStateError' && p.readable) return; // already open
+            if (i === tries - 1) throw e;
+            await _sleep(700);
+          }
+        }
+      }
+
+      function showLostState() {
+        _setMainCard(
+          'Connection lost',
+          'The watch disconnected',
+          'The USB link dropped, usually because the watch restarted. Plug it back in and we reconnect by ourselves, or click Reconnect.',
+          'unplug'
+        );
+        _setMainButton('Reconnect', { disabled: false, icon: 'refresh-cw' });
+        document.getElementById('mainActionBtn').classList.remove('hidden');
+      }
+
+      async function handleDeviceLost(reason) {
+        if (!port) return;
+        logSerial(`Lost the connection to the watch (${reason}).`, 'warn');
+        const p = port;
+        readLoopActive = false;
+        await _releasePersistentWriter();
+        if (reader) {
+          try {
+            await reader.cancel();
+          } catch (e) {}
+        }
+        try {
+          await p.close();
+        } catch (e) {}
+        port = null;
+        if (softReconnecting) return; // a forced reboot: the caller reattaches
+        connectionLost = true;
+        updateConnectionUI(false);
+        showLostState();
+        showNotification(
+          'Lost the connection to the watch. Plug it back in, we will reconnect automatically.',
+          'error'
+        );
+      }
+
+      // Reopen the watch's port after a forced reboot, without touching the UI.
+      async function _reattachPort(p) {
+        port = p;
+        lastPort = p;
+        await _openPort(p, 10);
+        incomingBuffer = '';
+        startSerialReader();
+      }
+
+      async function autoReconnect(p) {
+        if (reconnecting || port) return;
+        reconnecting = true;
+        try {
+          await _sleep(800); // let the watch finish re-enumerating
+          if (softReconnecting) {
+            await _reattachPort(p);
+          } else if (connectionLost) {
+            logSerial('The watch is back, reconnecting...', 'cmd');
+            await connectWatch(p);
+          }
+        } catch (e) {
+          logSerial(`Automatic reconnect failed: ${e.message}`, 'warn');
+          port = null;
+        } finally {
+          reconnecting = false;
+        }
+      }
+
+      // Pick the watch's port from the ones this page may already use.
+      async function reconnectWatch() {
+        let ports = [];
+        try {
+          ports = await navigator.serial.getPorts();
+        } catch (e) {}
+        const p = ports.includes(lastPort) ? lastPort : ports[0];
+        if (p) {
+          logSerial('Trying to reconnect to the watch...', 'cmd');
+          const ok = await connectWatch(p);
+          if (ok !== false) return;
+        }
+        await connectWatch(); // nothing known (or it failed): ask which port
+      }
+
+      if ('serial' in navigator) {
+        navigator.serial.addEventListener('disconnect', (e) => {
+          if (port && (e.target === port || e.target === lastPort)) {
+            handleDeviceLost('USB unplugged');
+          }
+        });
+        navigator.serial.addEventListener('connect', (e) => {
+          if (!port && (connectionLost || softReconnecting)) autoReconnect(e.target);
+        });
+      }
+
+      async function connectWatch(preselected) {
         if (!('serial' in navigator)) {
           logSerial(
             'Error: Web Serial API is not supported in this browser. Please use Google Chrome, Edge, or Opera.',
@@ -1369,10 +1478,16 @@
         }
 
         try {
-          logSerial('Requesting USB Serial port...', 'cmd');
-          port = await navigator.serial.requestPort();
           const BAUD_RATE = 57600;
-          await port.open({ baudRate: BAUD_RATE });
+          if (preselected) {
+            port = preselected;
+            await _openPort(port, 8);
+          } else {
+            logSerial('Requesting USB Serial port...', 'cmd');
+            port = await navigator.serial.requestPort();
+            await port.open({ baudRate: BAUD_RATE });
+          }
+          lastPort = port;
 
           startSerialReader();
 
@@ -1406,15 +1521,22 @@
               'Pick an option above to continue.',
               'help-circle'
             );
-            return;
+            return true;
           }
 
           showActions();
+          return true;
         } catch (err) {
           logSerial(
             `Connection failed: ${err.name || 'Error'} - ${err.message}`,
             'error'
           );
+          if (preselected) {
+            // silent attempt (reconnect): keep the "connection lost" screen
+            await disconnectSerial();
+            if (connectionLost) showLostState();
+            return false;
+          }
           if (err.name === 'NotFoundError') {
             showNotification(
               'No device chosen. Select your watch in the list to connect.',
@@ -1424,6 +1546,8 @@
             showNotification(`Couldn't connect: ${err.message}`, 'error');
           }
           await disconnectSerial();
+          if (connectionLost) showLostState();
+          return false;
         }
       }
 
@@ -1605,6 +1729,7 @@
         const badge = document.getElementById('connectionBadge');
 
         if (connected) {
+          connectionLost = false;
           btn.disabled = !!opts.keepInstallDisabled;
           setWatchMode('clock');
           badge.className =
@@ -1808,19 +1933,37 @@
           return false;
         }
         logSerial('Force reboot: pulsing the reset line (RTS)...', 'warn');
+        softReconnecting = true;
         try {
           await port.setSignals({ dataTerminalReady: false, requestToSend: true });
           await new Promise((r) => setTimeout(r, 120));
           await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+          incomingBuffer = '';
+          await new Promise((r) => setTimeout(r, 2000)); // let it boot
+          if (!port) {
+            // the USB re-enumerated: wait for the reconnect handler to reattach
+            for (let i = 0; i < 40 && !port; i++) await _sleep(250);
+          }
+          if (!port) {
+            const known = await navigator.serial.getPorts();
+            const p = known.includes(lastPort) ? lastPort : known[0];
+            if (p) await _reattachPort(p);
+          }
+          if (!port) throw new Error('the watch did not come back');
         } catch (err) {
           logSerial(
-            `Force reboot failed: ${err.message}. Unplug the watch, plug it back in and reconnect.`,
+            `Force reboot problem: ${err.message}. Unplug the watch, plug it back in and use Reconnect.`,
             'error'
           );
+          softReconnecting = false;
+          if (!port && !connectionLost) {
+            connectionLost = true;
+            updateConnectionUI(false);
+            showLostState();
+          }
           return false;
         }
-        incomingBuffer = '';
-        await new Promise((r) => setTimeout(r, 2000)); // let it boot
+        softReconnecting = false;
         logSerial('Force reboot sent, the watch is restarting.', 'success');
         return true;
       }
@@ -2321,6 +2464,10 @@
             disabled: false,
             icon: 'download-cloud',
           });
+          if (!port) {
+            if (connectionLost) showLostState();
+            else updateConnectionUI(false);
+          }
         }
       }
 
@@ -2372,6 +2519,7 @@
       window.handleMainAction = handleMainAction;
       window.startExtensionInstall = startExtensionInstall;
       window.hardResetWatch = hardResetWatch;
+      window.reconnectWatch = reconnectWatch;
       window.startFullInstall = startFullInstall;
       window.selectAction = selectAction;
       window.toggleConsole = toggleConsole;
