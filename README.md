@@ -42,6 +42,8 @@ clock_bg.spr        Clock face background sprite
 
 A browser-based installer (Web Serial API) is available for flashing this firmware without any local tooling — just Chrome/Edge, a USB-C cable, and the watch. It fetches every file from this repo, opens a MicroPython Raw REPL session over serial, and writes each file to the device.
 
+Flow: click **Connect Watch** first. Once the watch is connected (and MicroPython is detected) the page offers three choices: **Install ClockStar**, **Add-ons** (install or remove extras on their own), or **Install MicroPython**. A watch illustration on the right mirrors the state (not connected, clock, install progress).
+
 **Requirements:** Chrome or Edge (Web Serial API support). Firefox/Safari are not supported.
 
 ## Extensions & adding a screen
