@@ -286,6 +286,14 @@
                 We couldn't get an answer from MicroPython on this watch. That
                 usually means one of two things:
               </p>
+              <div class="flex flex-wrap gap-2">
+                <button onclick="chooseFirmwarePath('reboot')" class="btn btn-ghost btn-sm">
+                  Force reboot &amp; check again
+                </button>
+                <button onclick="chooseFirmwarePath('skip')" class="btn btn-ghost btn-sm">
+                  Skip the check, continue anyway &rarr;
+                </button>
+              </div>
               <div class="grid sm:grid-cols-2 gap-3">
                 <button onclick="chooseFirmwarePath('bricked')" class="opt !items-start">
                   <span class="opt-text">
@@ -1659,7 +1667,32 @@
       // ==========================================
       // STEP 0: FIRMWARE CHECK BRANCHING
       // ==========================================
-      function chooseFirmwarePath(choice) {
+      async function chooseFirmwarePath(choice) {
+        if (choice === 'skip') {
+          document.getElementById('firmwareCheckPanel').classList.add('hidden');
+          firmwareDetected = true;
+          logSerial('Firmware check skipped by the user, continuing anyway.', 'warn');
+          showActions();
+          return;
+        }
+        if (choice === 'reboot') {
+          try {
+            await hardResetWatch();
+            await new Promise((r) => setTimeout(r, 3000));
+            incomingBuffer = '';
+            const found = await verifyMicroPythonInstalled();
+            if (found) {
+              firmwareDetected = true;
+              document.getElementById('firmwareCheckPanel').classList.add('hidden');
+              showActions();
+            } else {
+              showNotification('Still no answer from the watch. You can skip the check and try the install anyway.', 'error');
+            }
+          } catch (e) {
+            showNotification('Force reboot failed: ' + e.message, 'error');
+          }
+          return;
+        }
         if (choice === 'bricked') {
           document.getElementById('brickedHelp').classList.remove('hidden');
           return;
