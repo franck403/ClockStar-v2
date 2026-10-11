@@ -9,6 +9,7 @@ Standalone on purpose:
 Raw-REPL API used by index.html:
     import install_ui as ui
     ui.begin(total_files)                 # prints 'UI_OK <battery %> <usb 0/1> <battery mV>'
+    ui.begin(total_files, 'addons')       # add-ons only: puzzle pieces snap together
     ui.update(pct, 'main.py', n, total)   # optional: title='Speed test', msg='...'
     ui.done('Restarting...')
     ui.fail('short reason')
@@ -59,7 +60,10 @@ _bl = None
 _adc = None
 _usb = None
 
-st = {'title': 'Installing', 'name': '', 'pct': 0, 'n': 0, 'total': 0, 'msg': '', 'col': ACC}
+st = {'title': 'Installing', 'name': '', 'pct': 0, 'n': 0, 'total': 0, 'msg': '', 'col': ACC,
+      'mode': 'files', 'frame': 0}
+YEL = _c(255, 214, 10)
+PUZ = (_c(59, 130, 246), _c(168, 85, 247), _c(236, 72, 153), _c(76, 217, 100))
 
 
 # ---------------------------------------------------------------- low level
@@ -210,7 +214,83 @@ def _bar(frac, col):
         rect(x + 2 + fw, y + 2, inner - fw, h - 4, TRACK)
 
 
+# 4 puzzle pieces, one per quarter of the install; each one flies in from
+# above or below and snaps into the row, then a few sparkles twinkle.
+_SPARK = ((6, 64), (118, 68), (30, 100), (98, 100), (64, 64), (12, 92), (114, 90), (48, 100))
+
+
+def prect(x, y, w, h, color):
+    """rect() clipped to the puzzle band (y 60..105) so flying pieces slide in
+    from behind its edges instead of covering the title."""
+    if y < 60:
+        h -= 60 - y
+        y = 60
+    if y + h > 106:
+        h = 106 - y
+    if h > 0:
+        rect(x, y, w, h, color)
+
+
+def _puzzle(p, done):
+    rect(0, 60, W, 46, BG)
+    x0, y0, sz = 7, 68, 24
+    for i in range(4):
+        local = (p - i * 25) / 25.0
+        x = x0 + i * 29
+        if local <= 0:
+            # slot outline, waiting for its piece
+            prect(x, y0, sz, 1, TRACK)
+            prect(x, y0 + sz - 1, sz, 1, TRACK)
+            prect(x, y0, 1, sz, TRACK)
+            prect(x + sz - 1, y0, 1, sz, TRACK)
+            continue
+        if local > 1:
+            local = 1
+        off = int((1 - local) * (1 - local) * 34)
+        y = y0 - off if i % 2 == 0 else y0 + off
+        col = PUZ[i]
+        prect(x, y, sz, sz, col)
+        prect(x + 3, y + 3, sz - 6, 3, FG if local >= 1 else col)     # highlight
+        if i < 3:
+            prect(x + sz, y + 8, 4, 8, col)                            # knob into the next piece
+        if i > 0:
+            prect(x, y + 8, 3, 8, BG)                                  # notch for the previous knob
+        if local >= 1 and 0 < (p - i * 25) < 40:
+            prect(x - 1, y - 1, sz + 2, 1, FG)                         # snap flash
+    k = st['frame']
+    if p >= 25 or done:
+        for j in range(5 if done else 3):
+            sx, sy = _SPARK[(k + j * 3) % len(_SPARK)]
+            prect(sx - 2, sy, 5, 1, YEL)
+            prect(sx, sy - 2, 1, 5, YEL)
+
+
+def _draw_addons():
+    pct, mv = battery()
+    u = usb()
+    _header(pct, mv, u)
+    st['frame'] += 1
+    ctext(st['title'], 36, FG, BG, True)
+    name = st['name']
+    if len(name) > 16:
+        name = '...' + name[-13:]
+    ctext(name, 50, DIM, BG)
+    p = st['pct']
+    _puzzle(p, st['title'] == 'Done!')
+    ctext('%d%%' % p, 108, st['col'], BG, True)
+    if st['msg']:
+        ctext(st['msg'], 118, st['col'], BG)
+    elif st['total']:
+        ctext('%d/%d files' % (st['n'], st['total']), 118, DIM, BG)
+    else:
+        ctext('', 118, DIM, BG)
+    gc.collect()
+
+
 def _draw():
+    if st['mode'] == 'addons':
+        _draw_addons()
+        return
     pct, mv = battery()
     u = usb()
     _header(pct, mv, u)
@@ -236,7 +316,7 @@ def _draw():
 
 
 # ---------------------------------------------------------------- public API
-def begin(total=0):
+def begin(total=0, mode='files'):
     global _spi, _dc, _rst, _bl, _adc, _usb
     gc.collect()
     if _spi is None:
@@ -267,7 +347,9 @@ def begin(total=0):
 
     rect(0, 0, W, H, BG)
     _bl(0)                           # backlight on (active low)
-    st['title'] = 'Installing'
+    st['mode'] = mode
+    st['frame'] = 0
+    st['title'] = 'Add-ons' if mode == 'addons' else 'Installing'
     st['name'] = ''
     st['pct'] = 0
     st['n'] = 0

@@ -529,6 +529,13 @@
               <text id="wsBig" x="299" y="395" text-anchor="middle" font-size="50" font-weight="500" fill="#475569" style="font-family: 'Fira Code', monospace">--:--</text>
               <rect x="269" y="410" width="60" height="1.5" fill="#ffffff" opacity="0.35" />
               <text id="wsSub" x="299" y="440" text-anchor="middle" font-size="12" letter-spacing="1.6" fill="#64748b" style="font-family: 'Fira Code', monospace">NOT CONNECTED</text>
+              <g id="wsPuzzle" style="display: none">
+                <g id="wsPz0" style="transition: transform 0.45s cubic-bezier(.2,1.4,.4,1), opacity 0.3s"><rect x="237" y="452" width="26" height="26" rx="4" fill="#3b82f6" /><rect x="263" y="459" width="5" height="10" fill="#3b82f6" /></g>
+                <g id="wsPz1" style="transition: transform 0.45s cubic-bezier(.2,1.4,.4,1), opacity 0.3s"><rect x="269" y="452" width="26" height="26" rx="4" fill="#a855f7" /><rect x="295" y="459" width="5" height="10" fill="#a855f7" /></g>
+                <g id="wsPz2" style="transition: transform 0.45s cubic-bezier(.2,1.4,.4,1), opacity 0.3s"><rect x="301" y="452" width="26" height="26" rx="4" fill="#ec4899" /><rect x="327" y="459" width="5" height="10" fill="#ec4899" /></g>
+                <g id="wsPz3" style="transition: transform 0.45s cubic-bezier(.2,1.4,.4,1), opacity 0.3s"><rect x="333" y="452" width="26" height="26" rx="4" fill="#4cd964" /></g>
+                <text id="wsSpark" x="299" y="500" text-anchor="middle" font-size="12" fill="#fde047" style="font-family: 'Fira Code', monospace"></text>
+              </g>
               <g id="wsBarWrap" style="display: none">
                 <rect x="234" y="458" width="130" height="6" rx="3" fill="#1f2937" />
                 <rect id="wsBar" x="234" y="458" width="0" height="6" rx="3" fill="#22d3ee" />
@@ -1144,7 +1151,7 @@
                 'warn'
               );
               if (err.name === 'NetworkError') {
-                setTimeout(() => handleDeviceLost('read error'), 0);
+                handleDeviceLost('read error');
               }
             }
           } finally {
@@ -1161,7 +1168,13 @@
           )}, readLoopActive=${readLoopActive}).`,
           'warn'
         );
+        const wasActive = readLoopActive;
         readLoopActive = false;
+        if (wasActive && port) {
+          // the stream ended on its own: the device is gone
+          readLoopActive = true;
+          handleDeviceLost('serial stream closed');
+        }
       }
 
       // ==========================================
@@ -1196,6 +1209,7 @@
       // WATCH PREVIEW (the illustration on the right mirrors the state)
       // ==========================================
       let watchMode = 'off'; // off | clock | progress | done
+      let watchInstallMode = 'full'; // full | extensions | icons
       let watchPct = 0;
 
       function setWatchMode(mode, pct) {
@@ -1216,6 +1230,9 @@
         const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
         barWrap.style.display = 'none';
+        const puzzle = document.getElementById('wsPuzzle');
+        puzzle.style.display = 'none';
+        document.getElementById('wsSpark').textContent = '';
         ring.setAttribute('opacity', '0');
         ring.classList.remove('ring-pulse');
         dot.setAttribute('fill', watchMode === 'off' ? '#334155' : '#22d3ee');
@@ -1223,16 +1240,40 @@
         if (watchMode === 'progress') {
           big.textContent = watchPct + '%';
           big.setAttribute('fill', '#ffffff');
-          sub.textContent = 'INSTALLING';
           sub.setAttribute('fill', '#cbd5e1');
-          barWrap.style.display = '';
-          bar.setAttribute('width', String(Math.round((130 * watchPct) / 100)));
+          if (watchInstallMode === 'extensions') {
+            // add-ons only: four puzzle pieces fly in and snap together
+            sub.textContent = 'ADD-ONS';
+            puzzle.style.display = '';
+            for (let i = 0; i < 4; i++) {
+              const local = Math.max(0, Math.min(1, (watchPct - i * 25) / 25));
+              const el = document.getElementById('wsPz' + i);
+              const off = Math.round((1 - local) * 34) * (i % 2 ? 1 : -1);
+              el.style.transform = `translateY(${off}px)`;
+              el.style.opacity = String(local === 0 ? 0.12 : 1);
+            }
+            document.getElementById('wsSpark').textContent =
+              watchPct >= 25 ? (Math.floor(Date.now() / 700) % 2 ? '+  *  +' : '*  +  *') : '';
+          } else {
+            sub.textContent = 'INSTALLING';
+            barWrap.style.display = '';
+            bar.setAttribute('width', String(Math.round((130 * watchPct) / 100)));
+          }
           ring.classList.add('ring-pulse');
         } else if (watchMode === 'done') {
           big.textContent = 'Done';
           big.setAttribute('fill', '#ffffff');
-          sub.textContent = 'ALL SET';
+          sub.textContent = watchInstallMode === 'extensions' ? 'ADD-ONS READY' : 'ALL SET';
           sub.setAttribute('fill', '#22d3ee');
+          if (watchInstallMode === 'extensions') {
+            puzzle.style.display = '';
+            for (let i = 0; i < 4; i++) {
+              const el = document.getElementById('wsPz' + i);
+              el.style.transform = 'translateY(0px)';
+              el.style.opacity = '1';
+            }
+            document.getElementById('wsSpark').textContent = '*  +  *  +  *';
+          }
         } else if (watchMode === 'clock') {
           const d = new Date();
           big.textContent = two(d.getHours()) + ':' + two(d.getMinutes());
@@ -1360,6 +1401,10 @@
       let softReconnecting = false; // true while a forced reboot re-plugs the USB
       let reconnecting = false;
       const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const _withTimeout = (p, ms) =>
+        Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
+      let deviceLostHandling = false;
+      let autoReconnectRunning = false;
 
       async function _openPort(p, tries) {
         for (let i = 0; i < tries; i++) {
@@ -1367,18 +1412,25 @@
             await p.open({ baudRate: 57600 });
             return;
           } catch (e) {
-            if (e.name === 'InvalidStateError' && p.readable) return; // already open
+            if (e.name === 'InvalidStateError') {
+              // still marked open (the watch vanished without a clean close):
+              // close it properly, then try again
+              try {
+                await _withTimeout(p.close(), 1500);
+              } catch (e2) {}
+            }
             if (i === tries - 1) throw e;
             await _sleep(700);
           }
         }
       }
 
-      function showLostState() {
+      function showLostState(extra) {
         _setMainCard(
           'Connection lost',
           'The watch disconnected',
-          'The USB link dropped, usually because the watch restarted. Plug it back in and we reconnect by ourselves, or click Reconnect.',
+          extra ||
+            'The USB link dropped, usually because the watch restarted. Plug it back in and we reconnect by ourselves, or click Reconnect.',
           'unplug'
         );
         _setMainButton('Reconnect', { disabled: false, icon: 'refresh-cw' });
@@ -1386,28 +1438,68 @@
       }
 
       async function handleDeviceLost(reason) {
-        if (!port) return;
+        if (!port || deviceLostHandling) return;
+        deviceLostHandling = true;
         logSerial(`Lost the connection to the watch (${reason}).`, 'warn');
         const p = port;
+        port = null; // gone: nothing may write to it from now on
         readLoopActive = false;
-        await _releasePersistentWriter();
-        if (reader) {
-          try {
-            await reader.cancel();
-          } catch (e) {}
+        if (!softReconnecting) {
+          // tell the user first, the cleanup below can be slow
+          connectionLost = true;
+          updateConnectionUI(false);
+          showLostState('Trying to reconnect automatically...');
+          showNotification(
+            'Lost the connection to the watch. Reconnecting automatically, you can also unplug and replug it.',
+            'error'
+          );
         }
         try {
-          await p.close();
+          await _withTimeout(_releasePersistentWriter(), 1000);
+          if (reader) await _withTimeout(reader.cancel(), 1000);
         } catch (e) {}
-        port = null;
-        if (softReconnecting) return; // a forced reboot: the caller reattaches
-        connectionLost = true;
-        updateConnectionUI(false);
-        showLostState();
-        showNotification(
-          'Lost the connection to the watch. Plug it back in, we will reconnect automatically.',
-          'error'
-        );
+        try {
+          await _withTimeout(p.close(), 1500);
+        } catch (e) {}
+        deviceLostHandling = false;
+        if (!softReconnecting) startAutoReconnect();
+      }
+
+      // Keeps trying to bring the watch back for about 90 s, and says so on
+      // the main card. The 'connect' event (re-plug) also triggers a try.
+      async function startAutoReconnect() {
+        if (autoReconnectRunning) return;
+        autoReconnectRunning = true;
+        const MAX = 45;
+        try {
+          for (let i = 1; i <= MAX && connectionLost && !port; i++) {
+            showLostState(
+              `Trying to reconnect automatically... (try ${i} of ${MAX}). Plug the watch back in if it was unplugged.`
+            );
+            let ports = [];
+            try {
+              ports = await navigator.serial.getPorts();
+            } catch (e) {}
+            const p = ports.includes(lastPort) ? lastPort : ports[0];
+            if (p && !reconnecting && !isFlashing) {
+              reconnecting = true;
+              try {
+                const ok = await connectWatch(p);
+                if (ok !== false) break;
+              } finally {
+                reconnecting = false;
+              }
+            }
+            await _sleep(2000);
+          }
+        } finally {
+          autoReconnectRunning = false;
+        }
+        if (connectionLost && !port) {
+          showLostState(
+            "Couldn't reconnect by itself. Unplug the watch, plug it back in, then click Reconnect."
+          );
+        }
       }
 
       // Reopen the watch's port after a forced reboot, without touching the UI.
@@ -1452,6 +1544,19 @@
         }
         await connectWatch(); // nothing known (or it failed): ask which port
       }
+
+      // Safety net: if the port quietly became unusable, notice within 1.5 s
+      setInterval(() => {
+        if (
+          port &&
+          readLoopActive &&
+          !deviceLostHandling &&
+          !softReconnecting &&
+          (!port.readable || !port.writable)
+        ) {
+          handleDeviceLost('port is no longer usable');
+        }
+      }, 1500);
 
       if ('serial' in navigator) {
         navigator.serial.addEventListener('disconnect', (e) => {
@@ -2230,6 +2335,7 @@
         document.getElementById('progressStatusText').innerText = 'Preparing';
         document.getElementById('currentFileText').innerText =
           'Keep the watch plugged in and this tab open.';
+        watchInstallMode = mode;
         setWatchMode('progress', 0);
 
         logSerial(
@@ -2257,11 +2363,12 @@
 
           // Put a progress screen on the watch itself (battery + USB + file
           // name + bar). Non-fatal: if it can't start, the install goes on.
-          await watchUiStart(total);
+          await watchUiStart(total, mode);
 
           // Always find the fastest packet size that works on this watch.
           await watchUiUpdate(0, total, 'Testing link', 0, 'Speed test');
           await runSpeedTest();
+          await watchUiUpdate(0, total, '', 0, mode === 'extensions' ? 'Add-ons' : mode === 'icons' ? 'Icons' : 'Installing');
           logSerial(
             'Extensions: ' +
               (getSelectedExtensions().map((e) => e.name).join(', ') ||
@@ -2507,7 +2614,7 @@
         }
       }
 
-      async function watchUiStart(total) {
+      async function watchUiStart(total, mode) {
         watchUi = false;
         uiTotal = total;
         uiDone = 0;
@@ -2523,6 +2630,7 @@
           const out = await execRawReplCommand(
             'import sys\nsys.modules.pop("install_ui", None)\nimport install_ui as ui\nui.begin(' +
               total +
+              (mode === 'extensions' ? ", 'addons'" : '') +
               ')\n'
           );
           const m = out.match(/UI_OK (\d+) (\d+) (\d+)/);
