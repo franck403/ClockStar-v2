@@ -4,7 +4,6 @@ import sys
 import machine
 import gc
 import esp32
-import micropython
 
 try:
     import sprite
@@ -1752,56 +1751,51 @@ def main_loop():
 _update_mode = False
 
 
+def _update_screen():
+    display.fill(Color.Black)
+    header_h = draw_header("UPDATE MODE", badge=False)
+    y = header_h + 14
+    for line, col in (("Updating", Color.White), ("your watch...", Color.White),
+                      ("", Color.White),
+                      ("Keep USB", Color.Cyan), ("plugged in", Color.Cyan),
+                      ("", Color.White),
+                      ("Do not", Color.Yellow), ("unplug", Color.Yellow)):
+        if line:
+            display.text(line, (WIDTH - len(line) * 8) // 2, y, col)
+        y += 10
+    draw_footer_hint("restarts when done")
+    display.commit()
+
+
 def enter_update_mode():
     """The web installer interrupts main.py with Ctrl+C before it copies new
-    files. Instead of just dying mid-frame, the watch goes into update mode:
-    the radio is switched off (nothing else touches the USB/CPU while files
-    are written), the backlight stays on, and the screen says what is going
-    on. Control then falls through to the REPL, which the installer drives.
-    A soft reboot (Ctrl+D) starts the new main.py."""
+    files. Instead of just dying mid-frame, the watch shows an update screen
+    and then returns to the REPL, which the installer drives. A soft reboot
+    (Ctrl+D) starts the new main.py.
+
+    The installer sends several Ctrl+C bytes in a row, so a late one can land
+    while the screen is being drawn: every step swallows KeyboardInterrupt and
+    simply retries. Nothing here touches kbd_intr or the BLE stack, so the
+    serial link can not end up silent."""
     global _update_mode
-    try:
-        # more Ctrl+C bytes are still arriving; don't let them break the drawing
-        micropython.kbd_intr(-1)
-    except Exception:
-        pass
-    try:
-        _update_mode = True
-        print("=== UPDATE MODE ===")
+    _update_mode = True
+    for _ in range(30):
         try:
-            link.disconnect()
-        except Exception:
-            pass
-        try:
+            print("=== UPDATE MODE ===")
             freq(FREQ_ACTIVE_HZ)
             cs.backlight.on()
             cs.rgb.set(0, 0, 0)
-        except Exception:
-            pass
-        display.fill(Color.Black)
-        header_h = draw_header("UPDATE MODE", badge=False)
-        y = header_h + 14
-        for line, col in (("Updating", Color.White), ("your watch...", Color.White),
-                          ("", Color.White),
-                          ("Keep USB", Color.Cyan), ("plugged in", Color.Cyan),
-                          ("", Color.White),
-                          ("Do not", Color.Yellow), ("unplug", Color.Yellow)):
-            if line:
-                display.text(line, (WIDTH - len(line) * 8) // 2, y, col)
-            y += 10
-        draw_footer_hint("restarts when done")
-        display.commit()
-        gc.collect()
-    except Exception as e:
-        try:
-            print("update mode screen error:", e)
-        except Exception:
-            pass
-    finally:
-        try:
-            micropython.kbd_intr(3)
-        except Exception:
-            pass
+            _update_screen()
+            gc.collect()
+            return
+        except KeyboardInterrupt:
+            continue
+        except Exception as e:
+            try:
+                print("update mode screen error:", e)
+            except Exception:
+                pass
+            return
 
 
 if __name__ == "__main__":
@@ -1811,4 +1805,7 @@ if __name__ == "__main__":
         _init_extensions()
         main_loop()
     except KeyboardInterrupt:
-        enter_update_mode()
+        try:
+            enter_update_mode()
+        except KeyboardInterrupt:
+            pass

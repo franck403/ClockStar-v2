@@ -2076,10 +2076,10 @@
       async function enterRawRepl() {
         logSerial('Attempting to enter MicroPython Raw REPL mode...', 'cmd');
 
+        // No Ctrl+D here: the safeguard already interrupted main.py, so the watch
+        // sits in update mode / the REPL. A soft reboot would restart the whole
+        // firmware and throw that state away.
         incomingBuffer = '';
-        await writeSerial('\x04');
-        await new Promise((r) => setTimeout(r, 300));
-        _logBufferSnapshot('initial Ctrl+D');
 
         for (let attempt = 1; attempt <= 10; attempt++) {
           if (!port) {
