@@ -4,6 +4,7 @@ import sys
 import machine
 import gc
 import esp32
+import micropython
 
 try:
     import sprite
@@ -734,16 +735,10 @@ def draw_settings_screen():
             row_y += 14
             display.text("%d mAh" % capacity, 4, row_y, Color.White)
             row_y += 12
-            display.text("chg: %s" % ("yes" if _charging else "no"), 4, row_y, Color.White)
+            display.text("usb:%s chg:%s" % ("Y" if _plugged else "N", "Y" if _charging else "N"), 4, row_y, Color.White)
             row_y += 12
-            if _charge_pin is not None:
-                try:
-                    raw_pin_val = _charge_pin.value()
-                    display.text("pin raw: %d" % raw_pin_val, 4, row_y, Color.White)
-                except Exception:
-                    display.text("pin read err", 4, row_y, Color.White)
-            else:
-                display.text("pin: not init", 4, row_y, Color.White)
+            display.text("cal x%.3f" % battery.get_calibration_scale(), 4, row_y, Color.White)
+            row_y += 12
         except Exception:
             display.text("battery read error", 4, body_y + 16, Color.White)
         draw_footer_hint("BACK exit")
@@ -807,6 +802,9 @@ def _on_up_press():
     if bs:
         backlightO()
         return
+    if _plug_anim_start is not None:
+        _cancel_plug_anim()
+        return
     if _screen == SCREEN_SYNC_LOCK:
         return
     if _screen == SCREEN_SETTINGS:
@@ -832,6 +830,9 @@ def _on_down_press():
     if bs:
         backlightO()
         return
+    if _plug_anim_start is not None:
+        _cancel_plug_anim()
+        return
     if _screen == SCREEN_SYNC_LOCK:
         return
     if _screen == SCREEN_SETTINGS:
@@ -856,6 +857,9 @@ def _on_back_press():
     global _screen, _notif_nav_mode, _media_control_mode
     if bs:
         backlightO()
+        return
+    if _plug_anim_start is not None:
+        _cancel_plug_anim()
         return
     if _screen == SCREEN_SYNC_LOCK:
         return
@@ -887,7 +891,10 @@ def _on_select_press():
     _select_held = True
     _select_hold_start = time.ticks_ms()
     _select_press_woke_dark_screen = bs
-    if bs:
+    if _plug_anim_start is not None:
+        _select_press_woke_dark_screen = True   # swallow the release action
+        _cancel_plug_anim()
+    elif bs:
         backlightO()
     elif _screen == SCREEN_CLOCK:
         global _slide_active, _slide_progress
@@ -951,38 +958,120 @@ buttons.on_release(Buttons.Select, _on_select_release)
 
 
 _batt_level = battery.LEVEL_HALF
-_charging = False
+_charging = False          # USB plugged in AND the cell is not full yet
+_plugged = False           # USB cable present (USB_DETECT, IO36)
+_batt_full = False
 _charge_pin = None
+_usb_cnt = 0               # debounce counter for the USB_DETECT line
+_batt_cal_at = 0
+
+# "Plugged in" animation, shown for a few seconds when a cable is connected
+PLUG_ANIM_MS = 4200
+PLUG_ANIM_FRAME_MS = 60
+_plug_anim_start = None
+_plug_anim_last = 0
+_plug_pct = 0
+_plug_volt = 0.0
 
 
 def _init_charge_pin():
-    global _charge_pin
-    # cs.pins.CHARGE (2) is a *logical* pin index, not a raw GPIO number --
-    # on this rev2 board it must go through cs.pins.get()/currentMap to
-    # resolve to the real GPIO (36). Passing the raw logical index (2)
-    # straight to machine.Pin() was opening the wrong physical pin, which
-    # is why the charge line never reacted to plugging in.
+    global _charge_pin, _plugged, _batt_cal_at
+    # cs.pins.CHARGE is a *logical* pin index, not a raw GPIO number -- on
+    # this rev2 board it must go through cs.pins.get() to resolve to the real
+    # GPIO (36, USB_DETECT). On the schematic USB_DETECT is VBUS split by
+    # two 5.1k resistors, so it reads high (about 2.5V) when a cable is in.
+    # The TP4054's CHRG pin only drives the white LED, it is not wired to
+    # the MCU, so "charging" is derived from plugged-in + battery voltage.
     charge_gpio = cs.pins.get(cs.pins.CHARGE)
     _charge_pin = Pin(charge_gpio, Pin.IN, Pin.PULL_UP)
+    _plugged = (_charge_pin.value() == 1)   # already plugged at boot: no animation
+    try:
+        battery.calibrate()
+    except Exception as e:
+        print("battery calibrate error:", e)
+    _batt_cal_at = time.ticks_ms()
+    # show the real level right away instead of waiting for 3 polls to agree
+    try:
+        lvl = battery.set_initial_level()
+        globals()["_batt_level"] = lvl
+    except Exception as e:
+        print("battery initial level error:", e)
 
 
 BATTERY_BLE_CUTOFF_PCT = 30
 _ble_killed_for_battery = False
+BATTERY_RECAL_MS = 30 * 60 * 1000
+
+
+def _check_usb(now):
+    """Cheap digital read, called every main-loop tick so plugging in is
+    noticed straight away (the battery ADC is only polled every 15 s)."""
+    global _plugged, _charging, _usb_cnt, _ble_killed_for_battery
+    global _plug_anim_start, _plug_anim_last, _plug_pct, _plug_volt, last_activity
+    if _charge_pin is None:
+        return
+    state = (_charge_pin.value() == 1)
+    if state == _plugged:
+        _usb_cnt = 0
+        return
+    _usb_cnt += 1
+    if _usb_cnt < 3:          # must differ on 3 consecutive reads
+        return
+    _usb_cnt = 0
+    _plugged = state
+    _charging = _plugged and not _batt_full
+    if _plugged:
+        _ble_killed_for_battery = False
+        try:
+            _plug_volt = battery.get_battery_voltage()
+            _plug_pct = battery.get_battery_percentage(_plug_volt)
+        except Exception:
+            _plug_volt, _plug_pct = 0.0, 0
+        _plug_anim_start = now
+        _plug_anim_last = 0
+        last_activity = now
+        backlightO()
+    else:
+        _plug_anim_start = None
+    _mark_dirty()
+
+
+def _cancel_plug_anim():
+    global _plug_anim_start
+    _plug_anim_start = None
+    _mark_dirty()
 
 
 def _poll_battery():
-    global _batt_level, _charging, _ble_killed_for_battery
-    level, changed = battery.poll(cs.pins.BATT)
-    if changed:
-        _batt_level = level
-        _mark_dirty()
+    global _batt_level, _charging, _batt_full, _ble_killed_for_battery, _batt_cal_at
+    now = time.ticks_ms()
+    if not _plugged and time.ticks_diff(now, _batt_cal_at) >= BATTERY_RECAL_MS:
+        battery.calibrate()
+        _batt_cal_at = now
 
-    charging_now = (_charge_pin.value() == 1)
+    try:
+        v = battery.get_battery_voltage()
+    except Exception:
+        v = 0.0
+    if _plugged:
+        # the TP4054 stops at 4.2V; treat 4.17V+ as done, restart below 4.10V
+        if v >= battery.FULL_VOLTAGE:
+            _batt_full = True
+        elif v < battery.RECHARGE_VOLTAGE:
+            _batt_full = False
+    else:
+        _batt_full = False
+
+    charging_now = _plugged and not _batt_full
     if charging_now != _charging:
         _charging = charging_now
         _mark_dirty()
-        if charging_now:
-            _ble_killed_for_battery = False
+
+    # while charging the voltage reads high, so the level is forced to FULL
+    level, changed = battery.poll(_charging)
+    if changed:
+        _batt_level = level
+        _mark_dirty()
 
     if not _ble_killed_for_battery:
         _enforce_battery_ble_cutoff()
@@ -990,7 +1079,7 @@ def _poll_battery():
 
 def _enforce_battery_ble_cutoff():
     global _ble_killed_for_battery
-    if _charging:
+    if _plugged:
         return
     pct = battery.get_battery_percentage()
     if pct < BATTERY_BLE_CUTOFF_PCT:
@@ -1000,6 +1089,87 @@ def _enforce_battery_ble_cutoff():
         except Exception as e:
             print("battery-cutoff disconnect error:", e)
         _mark_dirty()
+
+
+def draw_plug_animation(now):
+    """Full-screen 'plugged in' animation: a USB plug slides into the
+    battery, the battery fills up to the current level, a sweep runs through
+    the empty part while it charges, and a lightning bolt pulses."""
+    t = time.ticks_diff(now, _plug_anim_start)
+    d = display
+    W = WIDTH
+    d.fill(Color.Black)
+
+    title = "PLUGGED IN"
+    d.text(title, (W - len(title) * 8) // 2, 8, Color.White)
+    sub = "FULL" if _batt_full else "CHARGING"
+    d.text(sub, (W - len(sub) * 8) // 2, 20, Color.Green if not _batt_full else Color.Cyan)
+
+    bw, bh = 62, 32
+    bx = (W - bw) // 2 + 10
+    by = 40
+    cy = by + bh // 2
+    d.rect(bx, by, bw, bh, Color.White)
+    d.rect(bx + 1, by + 1, bw - 2, bh - 2, Color.White)
+    d.fill_rect(bx + bw, cy - 5, 4, 10, Color.White)
+
+    ix, iy = bx + 4, by + 4
+    iw, ih = bw - 8, bh - 8
+    pct = _plug_pct if _plug_pct > 0 else 1
+    target = (iw * pct) // 100
+    grow = (t - 700) / 800.0
+    if grow < 0:
+        grow = 0.0
+    elif grow > 1:
+        grow = 1.0
+    fw = int(target * grow)
+    fill_col = Color.Green if pct >= 20 else Color.Red
+    if fw > 0:
+        d.fill_rect(ix, iy, fw, ih, fill_col)
+
+    # sweep through the empty part while charging
+    if not _batt_full and t >= 1500 and fw < iw:
+        free = iw - fw
+        seg = 10 if free > 10 else free
+        pos = ((t - 1500) % 900) * (free - seg + 1) // 900
+        d.fill_rect(ix + fw + pos, iy, seg, ih, Color.rgb(0, 110, 0))
+
+    # USB plug sliding in from the left, with its cable
+    slide = t / 700.0
+    if slide > 1:
+        slide = 1.0
+    slide = 1.0 - (1.0 - slide) * (1.0 - slide)         # ease out
+    end_x = bx - 20
+    px = int(end_x * slide)
+    d.fill_rect(0, cy - 1, px + 1, 3, Color.GRAY)       # cable
+    d.fill_rect(px, cy - 6, 14, 12, Color.GRAY)         # plug body
+    d.rect(px, cy - 6, 14, 12, Color.White)
+    d.fill_rect(px + 14, cy - 4, 6, 3, Color.White)     # prongs
+    d.fill_rect(px + 14, cy + 1, 6, 3, Color.White)
+    if 650 <= t < 950:                                  # contact spark
+        sx = bx - 2
+        d.line(sx - 4, cy - 10, sx + 2, cy - 4, Color.Yellow)
+        d.line(sx - 4, cy + 10, sx + 2, cy + 4, Color.Yellow)
+        d.line(sx - 8, cy, sx - 3, cy, Color.Yellow)
+
+    # lightning bolt on the battery, pulsing
+    if t >= 900 and ((t // 350) % 2 == 0 or t > 3000):
+        bcx = bx + bw // 2
+        for off in (0, 1):
+            x = bcx + off
+            d.line(x + 4, cy - 11, x - 4, cy + 1, Color.Yellow)
+            d.line(x - 4, cy + 1, x + 1, cy + 1, Color.Yellow)
+            d.line(x + 1, cy + 1, x - 4, cy + 11, Color.Yellow)
+            d.line(x - 4, cy + 11, x + 5, cy - 2, Color.Yellow)
+            d.line(x + 5, cy - 2, x, cy - 2, Color.Yellow)
+            d.line(x, cy - 2, x + 4, cy - 11, Color.Yellow)
+
+    s = "%d%%" % pct
+    _text_2x(s, (W - len(s) * 16) // 2, 84, Color.White)
+    if _plug_volt > 0:
+        v = "%.2fV" % _plug_volt
+        d.text(v, (W - len(v) * 8) // 2, 106, Color.GRAY)
+    draw_footer_hint("any key: skip")
 
 
 def _draw_battery_icon_fallback(x, y, invert=False):
@@ -1332,6 +1502,11 @@ def draw_frame():
             time.ticks_diff(_fc1, _fc0), time.ticks_diff(_fc1, _f0)))
         return
  
+    if _plug_anim_start is not None:
+        draw_plug_animation(time.ticks_ms())
+        display.commit()
+        return
+
     _f1 = time.ticks_ms()
     if _screen == SCREEN_CLOCK:
         draw_clock_screen()
@@ -1434,7 +1609,7 @@ def main_loop():
     global _dirty, last_activity
     global _select_held, _select_hold_start, _select_press_woke_dark_screen, _slide_active, _slide_progress
     global _screen, _synced
-    global _sync_transition_pending_at, _sync_screen_battery_drawn
+    global _sync_transition_pending_at, _sync_screen_battery_drawn, _plug_anim_last
     last_second = -1
     last_pairing_poll = time.ticks_ms()
     last_battery_poll = time.ticks_ms()
@@ -1465,6 +1640,15 @@ def main_loop():
     while True:
         now = time.ticks_ms()
         screens.run_background(now)
+
+        _check_usb(now)
+        if _plug_anim_start is not None:
+            if time.ticks_diff(now, _plug_anim_start) >= PLUG_ANIM_MS:
+                _cancel_plug_anim()
+            elif time.ticks_diff(now, _plug_anim_last) >= PLUG_ANIM_FRAME_MS:
+                _plug_anim_last = now
+                _dirty = True
+            last_activity = now
 
         if not bs:
             last_sync_anim = _update_active_ui(now, last_sync_anim)
@@ -1565,8 +1749,66 @@ def main_loop():
             time.sleep_ms(20)
 
 
+_update_mode = False
+
+
+def enter_update_mode():
+    """The web installer interrupts main.py with Ctrl+C before it copies new
+    files. Instead of just dying mid-frame, the watch goes into update mode:
+    the radio is switched off (nothing else touches the USB/CPU while files
+    are written), the backlight stays on, and the screen says what is going
+    on. Control then falls through to the REPL, which the installer drives.
+    A soft reboot (Ctrl+D) starts the new main.py."""
+    global _update_mode
+    try:
+        # more Ctrl+C bytes are still arriving; don't let them break the drawing
+        micropython.kbd_intr(-1)
+    except Exception:
+        pass
+    try:
+        _update_mode = True
+        print("=== UPDATE MODE ===")
+        try:
+            link.disconnect()
+        except Exception:
+            pass
+        try:
+            freq(FREQ_ACTIVE_HZ)
+            cs.backlight.on()
+            cs.rgb.set(0, 0, 0)
+        except Exception:
+            pass
+        display.fill(Color.Black)
+        header_h = draw_header("UPDATE MODE", badge=False)
+        y = header_h + 14
+        for line, col in (("Updating", Color.White), ("your watch...", Color.White),
+                          ("", Color.White),
+                          ("Keep USB", Color.Cyan), ("plugged in", Color.Cyan),
+                          ("", Color.White),
+                          ("Do not", Color.Yellow), ("unplug", Color.Yellow)):
+            if line:
+                display.text(line, (WIDTH - len(line) * 8) // 2, y, col)
+            y += 10
+        draw_footer_hint("restarts when done")
+        display.commit()
+        gc.collect()
+    except Exception as e:
+        try:
+            print("update mode screen error:", e)
+        except Exception:
+            pass
+    finally:
+        try:
+            micropython.kbd_intr(3)
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
-    cs.rgb.set(0, 0, 0)
-    _load_settings()
-    _init_extensions()
-    main_loop()
+    try:
+        cs.rgb.set(0, 0, 0)
+        _load_settings()
+        _init_extensions()
+        main_loop()
+    except KeyboardInterrupt:
+        enter_update_mode()

@@ -42,6 +42,10 @@ clock_bg.spr        Clock face background sprite
 
 **Icon editor:** the installer's *Icons* tab opens a pixel editor for every `.spr` (clock and control backgrounds, battery, phone, slider). Draw, fill, import a picture or a `.spr`, then *Install icons* (only the changed sprites are copied). Edits are kept in the browser and also go along with a full install. Each icon keeps its size. `spr-converter.html` still converts whole images.
 
+**Battery / USB (from the v2.4 schematic):** `BATT_READ` is IO10 (ADC), a /4 divider (3x20k + 150R over 20k to GND), so 4.2V reads about 1.05V. `CALIB_EN` (IO35) switches the TL431 reference onto the divider (0.624V on the pin) and `battery.calibrate()` uses it to correct the ADC (at boot and every 30 min). `USB_DETECT` is IO36 (VBUS split in two by 5.1k resistors, about 2.5V when a cable is in). The charger's CHRG pin only drives the white LED, so "charging" means plugged in and below 4.17V. Plugging the cable in plays a full-screen animation (any key skips it).
+
+**Update mode:** when the installer interrupts `main.py` (Ctrl+C) the watch shows an UPDATE MODE screen, switches the radio off and falls through to the REPL for the file transfer. The next restart runs the new code.
+
 **MicroPython version:** I recommend **MicroPython 1.29** (the one I use, it works best). Get the ESP32-S3 build from https://micropython.org/download/ESP32_GENERIC_S3/ and flash it from the installer's *MicroPython* tab.
 
 A browser-based installer (Web Serial API) is available for flashing this firmware without any local tooling — just Chrome/Edge, a USB-C cable, and the watch. It fetches every file from this repo, opens a MicroPython Raw REPL session over serial, and writes each file to the device.
