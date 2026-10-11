@@ -2403,7 +2403,7 @@
           // Always find the fastest packet size that works on this watch.
           await watchUiUpdate(0, total, 'Testing link', 0, 'Speed test');
           await runSpeedTest();
-          await watchUiUpdate(0, total, '', 0, mode === 'extensions' ? 'Add-ons' : mode === 'icons' ? 'Icons' : 'Installing');
+          await watchUiUpdate(0, total, '', 0, mode === 'extensions' ? 'Add-ons' : mode === 'icons' ? 'Icons' : 'Updating');
           logSerial(
             'Extensions: ' +
               (getSelectedExtensions().map((e) => e.name).join(', ') ||
@@ -2727,7 +2727,8 @@
         await execRawReplCommand(`f = open('${filename}', 'wb')`);
 
         const chunkSize = transfer.chunk;
-        let nextUi = 0.25;
+        let lastUiAt = 0;
+        let lastUiPct = -1;
         for (let i = 0; i < uint8Data.length; i += chunkSize) {
           const chunk = uint8Data.subarray(i, i + chunkSize);
           let binaryString = '';
@@ -2742,12 +2743,20 @@
           await execRawReplCommand(`f.write(ubinascii.a2b_base64('${b64}'))`);
           bytesSent += chunk.length;
 
-          // big files: move the watch's progress bar while the file is copied
-          if (watchUi && !quiet && uint8Data.length > 4096) {
+          // every packet moves the web progress bar; the watch screen follows
+          // at most ~4 times a second (each update is one raw-REPL round trip)
+          if (!quiet) {
             const frac = (i + chunk.length) / uint8Data.length;
-            if (frac >= nextUi && frac < 1) {
-              nextUi = frac + 0.25;
-              await watchUiUpdate(uiDone, uiTotal, uiName, frac);
+            if (frac < 1) {
+              packetProgress(frac);
+              if (watchUi) {
+                const wp = Math.round(((uiDone + frac) / Math.max(1, uiTotal)) * 100);
+                if (wp !== lastUiPct && Date.now() - lastUiAt > 250) {
+                  lastUiAt = Date.now();
+                  lastUiPct = wp;
+                  await watchUiUpdate(uiDone, uiTotal, uiName, frac);
+                }
+              }
             }
           }
 
@@ -2760,7 +2769,21 @@
         if (!quiet) logSerial(`Wrote '${filename}' successfully.`, 'success');
       }
 
+      let progDone = 0;
+      let progTotal = 1;
+
+      // Called after every packet: the bar moves with the bytes sent, not only
+      // when a whole file is finished.
+      function packetProgress(frac) {
+        const exact = Math.min(100, ((progDone + frac) / Math.max(1, progTotal)) * 100);
+        document.getElementById('progressBarInner').style.width = `${exact.toFixed(1)}%`;
+        document.getElementById('progressPercentText').innerText = `${Math.round(exact)}%`;
+        setWatchMode('progress', Math.round(exact));
+      }
+
       function updateProgress(current, total, statusText, startTime) {
+        progDone = current;
+        progTotal = total;
         const percent = Math.round((current / total) * 100);
 
         document.getElementById('progressStatusText').innerText = statusText

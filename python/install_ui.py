@@ -333,25 +333,25 @@ def _draw():
         return
     pct, mv = battery()
     u = usb()
-    _header(pct, mv, u)
-    ctext(st['title'], 36, FG, BG, True)
+    _topbar(pct, u)
+    ctext(st['title'], 24, FG, BG, True)
     name = st['name']
     if len(name) > 16:
         name = '...' + name[-13:]
-    ctext(name, 52, DIM, BG)
+    ctext(name, 40, DIM, BG)
     p = st['pct']
     _bar(p / 100, st['col'])
     big(('%d%%' % p).center(4), 88, st['col'], BG)
     if st['msg']:
-        ctext(st['msg'], 108, st['col'], BG)
+        ctext(st['msg'], 110, st['col'], BG)
     elif not u:
-        ctext('LOW BATTERY!' if pct < 20 else 'Plug in USB', 108, WARN, BG)
+        ctext('LOW BATTERY!' if pct < 20 else 'Plug in USB', 110, WARN, BG)
     else:
-        ctext('Do not unplug', 108, DIM, BG)
+        ctext('Do not unplug', 110, WARN, BG)
     if st['total']:
-        ctext('%d/%d files' % (st['n'], st['total']), 118, DIM, BG)
+        ctext('%d/%d files' % (st['n'], st['total']), 119, DIM, BG)
     else:
-        ctext('', 118, DIM, BG)
+        ctext('', 119, DIM, BG)
     gc.collect()
 
 
@@ -389,7 +389,7 @@ def begin(total=0, mode='files'):
     _bl(0)                           # backlight on (active low)
     st['mode'] = mode
     st['frame'] = 0
-    st['title'] = 'Add-ons' if mode == 'addons' else 'Installing'
+    st['title'] = 'Add-ons' if mode == 'addons' else 'Updating'
     st['name'] = ''
     st['pct'] = 0
     st['n'] = 0
