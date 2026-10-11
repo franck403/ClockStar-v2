@@ -214,26 +214,69 @@ def _bar(frac, col):
         rect(x + 2 + fw, y + 2, inner - fw, h - 4, TRACK)
 
 
-# 4 puzzle pieces, one per quarter of the install; each one flies in from
-# above or below and snaps into the row, then a few sparkles twinkle.
-_SPARK = ((6, 64), (118, 68), (30, 100), (98, 100), (64, 64), (12, 92), (114, 90), (48, 100))
+# Add-ons screen, laid out like the watch preview on the installer page:
+# status dot + battery top row, big percent, divider, small label, then four
+# puzzle pieces that fly in and snap together (one per quarter), then sparkles.
+CYAN = _c(34, 211, 238)
+BAND_TOP, BAND_BOT = 74, 124
+_SPARK = ((10, 114), (118, 116), (34, 118), (94, 112), (64, 116), (20, 112), (108, 118), (50, 112))
 
 
 def prect(x, y, w, h, color):
-    """rect() clipped to the puzzle band (y 60..105) so flying pieces slide in
-    from behind its edges instead of covering the title."""
-    if y < 60:
-        h -= 60 - y
-        y = 60
-    if y + h > 106:
-        h = 106 - y
+    """rect() clipped to the puzzle band so flying pieces slide in from behind
+    its edges instead of covering the label above."""
+    if y < BAND_TOP:
+        h -= BAND_TOP - y
+        y = BAND_TOP
+    if y + h > BAND_BOT:
+        h = BAND_BOT - y
     if h > 0:
         rect(x, y, w, h, color)
 
 
+def big3(s, y, fg, bg):
+    """3x text, centered. s is always 4 characters so the margins never change."""
+    n = min(len(s), 4)
+    s = s[:n]
+    sw = n * 8
+    ow = sw * 3
+    mono = bytearray(sw)
+    fb = framebuf.FrameBuffer(mono, sw, 8, framebuf.MONO_HLSB)
+    fb.text(s, 0, 0, 1)
+    fgb = fg.to_bytes(2, 'little')
+    bgb = bg.to_bytes(2, 'little')
+    rowlen = ow * 2
+    out = bytearray(rowlen * 24)
+    for r in range(8):
+        row = bytearray(bgb * ow)
+        for cx in range(sw):
+            if fb.pixel(cx, r):
+                j = cx * 6
+                row[j:j + 6] = fgb * 3
+        for k in range(3):
+            out[(3 * r + k) * rowlen:(3 * r + k + 1) * rowlen] = row
+    x = (W - ow) // 2
+    _win(x, y, x + ow - 1, y + 23)
+    _spi.write(out)
+
+
+def _topbar(pct, u):
+    rect(0, 0, W, 16, BG)
+    rect(5, 5, 6, 6, CYAN)
+    col = OK if pct >= 40 else (WARN if pct >= 20 else BAD)
+    rect(98, 3, 22, 10, DIM)
+    rect(99, 4, 20, 8, BG)
+    fw = pct * 18 // 100
+    if fw > 0:
+        rect(100, 5, fw, 6, col)
+    rect(120, 6, 2, 4, DIM)
+    if not u:
+        rect(88, 6, 4, 4, WARN)          # no USB power: small amber marker
+
+
 def _puzzle(p, done):
-    rect(0, 60, W, 46, BG)
-    x0, y0, sz = 7, 68, 24
+    rect(0, BAND_TOP, W, BAND_BOT - BAND_TOP, BG)
+    x0, y0, sz = 7, 84, 24
     for i in range(4):
         local = (p - i * 25) / 25.0
         x = x0 + i * 29
@@ -268,22 +311,19 @@ def _puzzle(p, done):
 def _draw_addons():
     pct, mv = battery()
     u = usb()
-    _header(pct, mv, u)
     st['frame'] += 1
-    ctext(st['title'], 36, FG, BG, True)
-    name = st['name']
-    if len(name) > 16:
-        name = '...' + name[-13:]
-    ctext(name, 50, DIM, BG)
+    _topbar(pct, u)
     p = st['pct']
-    _puzzle(p, st['title'] == 'Done!')
-    ctext('%d%%' % p, 108, st['col'], BG, True)
-    if st['msg']:
-        ctext(st['msg'], 118, st['col'], BG)
-    elif st['total']:
-        ctext('%d/%d files' % (st['n'], st['total']), 118, DIM, BG)
-    else:
-        ctext('', 118, DIM, BG)
+    failed = st['title'] == 'Failed'
+    done = st['title'] == 'Done!'
+    big3('Err ' if failed else ('Done' if done else ('%d%%' % p).center(4)), 24,
+         st['col'] if (failed or done) else FG, BG)
+    rect(34, 54, 60, 1, TRACK)
+    label = 'FAILED' if failed else ('ADD-ONS READY' if done else 'ADD-ONS')
+    ctext(' '.join(label) if len(label) < 8 else label, 62, st['col'] if (failed or done) else DIM, BG)
+    _puzzle(p, done)
+    if failed:
+        ctext(st['msg'], 118, BAD, BG)
     gc.collect()
 
 
