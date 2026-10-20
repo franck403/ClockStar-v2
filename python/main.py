@@ -550,6 +550,7 @@ def draw_sync_lock_screen(full_redraw=True):
 
         draw_battery_icon(WIDTH - 4 - 14 - 2, 3, invert=False)
         _sync_screen_battery_drawn = True
+        draw_footer_hint("SEL manual time")
     else:
         display.fill_rect(0, status_y, WIDTH, 10, Color.Black)
 
@@ -562,8 +563,167 @@ def draw_sync_lock_screen(full_redraw=True):
 
 def _sync_lock_tick_anim():
     global _sync_anim_idx
+    if _manual_sync_mode:
+        return
     _sync_anim_idx = (_sync_anim_idx + 1) % len(_SYNC_DOT_FRAMES)
     _mark_dirty()
+
+
+# ---------------------------------------------------------------------------
+# Manual time set (sync lock screen, "manual version")
+# ---------------------------------------------------------------------------
+# Fallback for when the phone app can't send the time: on the sync lock
+# screen, SEL opens a manual date/time editor. UP/DOWN change the selected
+# field, SEL moves to the next field (SEL on the last field saves), BACK
+# goes back one field (BACK on the first field leaves the editor).
+
+MANUAL_YEAR_MIN = 2020
+MANUAL_YEAR_MAX = 2099
+MANUAL_DEFAULT = [2026, 1, 1, 12, 0]   # year, month, day, hour, minute
+MANUAL_FIELD_NAMES = ("YEAR", "MONTH", "DAY", "HOUR", "MINUTE")
+_manual_sync_mode = False
+_manual_field = 0
+_manual_vals = list(MANUAL_DEFAULT)
+
+
+def _days_in_month(year, month):
+    if month == 2:
+        leap = (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0))
+        return 29 if leap else 28
+    if month in (4, 6, 9, 11):
+        return 30
+    return 31
+
+
+def _manual_clamp_day():
+    maxd = _days_in_month(_manual_vals[0], _manual_vals[1])
+    if _manual_vals[2] > maxd:
+        _manual_vals[2] = maxd
+
+
+def _write_rtc_fields(year, month, day, hours, minutes, seconds):
+    global _synced
+    t = cs.rtc.time
+    t.year = year
+    t.month = month
+    t.day = day
+    t.hours = hours
+    t.minutes = minutes
+    t.seconds = seconds
+    rtc.set_time(t)
+    print("MANUAL SET: wrote", year, month, day, hours, minutes, seconds)
+
+    was_synced = _synced
+    _synced = True
+    if not was_synced:
+        _on_sync_acquired()
+
+
+def _manual_enter():
+    global _manual_sync_mode, _manual_field, _manual_vals
+    _manual_vals = list(MANUAL_DEFAULT)
+    _manual_field = 0
+    _manual_sync_mode = True
+    _mark_dirty()
+
+
+def _manual_exit():
+    global _manual_sync_mode, _sync_screen_battery_drawn
+    _manual_sync_mode = False
+    _sync_screen_battery_drawn = False
+    _mark_dirty()
+
+
+def _manual_adjust(delta):
+    i = _manual_field
+    v = _manual_vals[i]
+    if i == 0:
+        span = MANUAL_YEAR_MAX - MANUAL_YEAR_MIN + 1
+        v = (v - MANUAL_YEAR_MIN + delta) % span + MANUAL_YEAR_MIN
+    elif i == 1:
+        v = (v - 1 + delta) % 12 + 1
+    elif i == 2:
+        v = (v - 1 + delta) % _days_in_month(_manual_vals[0], _manual_vals[1]) + 1
+    elif i == 3:
+        v = (v + delta) % 24
+    else:
+        v = (v + delta) % 60
+    _manual_vals[i] = v
+    _manual_clamp_day()
+    _mark_dirty()
+
+
+def _manual_next():
+    global _manual_field
+    if _manual_field < len(MANUAL_FIELD_NAMES) - 1:
+        _manual_field += 1
+        _mark_dirty()
+    else:
+        _manual_save()
+
+
+def _manual_back():
+    global _manual_field
+    if _manual_field > 0:
+        _manual_field -= 1
+        _mark_dirty()
+    else:
+        _manual_exit()
+
+
+def _manual_save():
+    year, month, day, hour, minute = _manual_vals
+    try:
+        _write_rtc_fields(year, month, day, hour, minute, 0)
+    except Exception as e:
+        print("manual set error:", e)
+        return
+    _manual_exit()
+
+
+def draw_manual_time_screen():
+    display.fill(Color.Black)
+    header_h = draw_header("SET TIME", badge=False)
+
+    year, month, day, hour, minute = _manual_vals
+    sel = _manual_field
+
+    # date line YYYY-MM-DD, 8px font, selected field inverted
+    date_y = header_h + 16
+    date_parts = (("%04d" % year, 0), ("-", None), ("%02d" % month, 1),
+                  ("-", None), ("%02d" % day, 2))
+    date_w = sum(len(t) for t, _ in date_parts) * 8
+    x = (WIDTH - date_w) // 2
+    for text, fi in date_parts:
+        w = len(text) * 8
+        if fi == sel:
+            display.fill_rect(x - 1, date_y - 2, w + 2, 12, Color.White)
+            display.text(text, x, date_y, Color.Black)
+        else:
+            display.text(text, x, date_y, Color.White)
+        x += w
+
+    # time line HH:MM, 16px font, selected field inverted
+    time_y = 60
+    time_parts = (("%02d" % hour, 3), (":", None), ("%02d" % minute, 4))
+    time_w = sum(len(t) for t, _ in time_parts) * 16
+    x = (WIDTH - time_w) // 2
+    for text, fi in time_parts:
+        w = len(text) * 16
+        if fi == sel:
+            display.fill_rect(x - 2, time_y - 2, w + 4, 20, Color.White)
+            _text_2x(text, x, time_y, Color.Black)
+        else:
+            _text_2x(text, x, time_y, Color.White)
+        x += w
+
+    name = MANUAL_FIELD_NAMES[sel]
+    display.text(name, (WIDTH - len(name) * 8) // 2, 90, Color.White)
+    display.text("UP/DN change", 4, HEIGHT - 24, Color.White)
+    if sel == len(MANUAL_FIELD_NAMES) - 1:
+        draw_footer_hint("SEL save BACK <")
+    else:
+        draw_footer_hint("SEL next BACK <")
 
 
 # ---------------------------------------------------------------------------
@@ -805,6 +965,8 @@ def _on_up_press():
         _cancel_plug_anim()
         return
     if _screen == SCREEN_SYNC_LOCK:
+        if _manual_sync_mode:
+            _manual_adjust(1)
         return
     if _screen == SCREEN_SETTINGS:
         _settings_on_up()
@@ -833,6 +995,8 @@ def _on_down_press():
         _cancel_plug_anim()
         return
     if _screen == SCREEN_SYNC_LOCK:
+        if _manual_sync_mode:
+            _manual_adjust(-1)
         return
     if _screen == SCREEN_SETTINGS:
         _settings_on_down()
@@ -861,6 +1025,8 @@ def _on_back_press():
         _cancel_plug_anim()
         return
     if _screen == SCREEN_SYNC_LOCK:
+        if _manual_sync_mode:
+            _manual_back()
         return
     if _screen == SCREEN_SETTINGS:
         _settings_on_back()
@@ -914,8 +1080,6 @@ def _on_select_release():
         _mark_dirty()
     if _select_press_woke_dark_screen:
         return  
-    if _screen == SCREEN_SYNC_LOCK:
-        return
     if held_ms < SETTINGS_HOLD_MS:
         _do_select_short_action()
 
@@ -923,6 +1087,10 @@ def _on_select_release():
 def _do_select_short_action():
     global _media_state, _screen, _notif_nav_mode, _media_control_mode
     if _screen == SCREEN_SYNC_LOCK:
+        if _manual_sync_mode:
+            _manual_next()
+        else:
+            _manual_enter()
         return
     if _screen == SCREEN_SETTINGS:
         _settings_on_select()
@@ -1493,6 +1661,10 @@ def draw_frame():
     _f0 = time.ticks_ms()
  
     if _screen == SCREEN_SYNC_LOCK:
+        if _manual_sync_mode:
+            draw_manual_time_screen()
+            display.commit()
+            return
         draw_sync_lock_screen(full_redraw=not _sync_screen_battery_drawn)
         _fc0 = time.ticks_ms()
         display.commit()
