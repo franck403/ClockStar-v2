@@ -10,6 +10,7 @@ import machine
 _OTA_STAGING = "/ota_staging"
 _OTA_MANIFEST = "/ota_manifest.txt"
 _OTA_CHUNK_PREFIX = "chunk_"
+_OTA_SWAP_FLAG = "/ota_swap_in_progress"
 
 # Target files that can be updated
 _UPDATEABLE_FILES = {
@@ -190,6 +191,14 @@ def finalize_update():
     backup_path = target_path + ".bak"
 
     try:
+        # Write swap-in-progress flag before any file operations
+        try:
+            with open(_OTA_SWAP_FLAG, "w") as f:
+                f.write("filename={}\n".format(filename))
+        except (OSError, IOError) as e:
+            print("OTA: failed to write swap flag:", e)
+            return (False, "cannot write swap flag")
+
         # Backup current file
         try:
             with open(target_path, "rb") as src:
@@ -202,6 +211,12 @@ def finalize_update():
         with open(target_path, "wb") as f:
             f.write(bytes(reassembled))
 
+        # If we get here, swap succeeded — clear the flag
+        try:
+            os.remove(_OTA_SWAP_FLAG)
+        except OSError:
+            pass
+
         _cleanup_staging()
         try:
             os.remove(_OTA_MANIFEST)
@@ -212,14 +227,22 @@ def finalize_update():
         return (True, "update complete")
 
     except (OSError, IOError) as e:
-        # Try to restore from backup
+        # Swap failed — try to restore from backup (if it exists)
         try:
             if os.stat(backup_path):
                 with open(backup_path, "rb") as src:
                     with open(target_path, "wb") as dst:
                         dst.write(src.read())
+                print("OTA: restored backup for", filename)
         except OSError:
             pass
+
+        # Clear the flag so boot doesn't try to restore again
+        try:
+            os.remove(_OTA_SWAP_FLAG)
+        except OSError:
+            pass
+
         return (False, "write error: {}".format(e))
 
 def cancel_update():
@@ -255,10 +278,47 @@ def get_update_status():
 
 def check_for_pending_update():
     """
-    At boot, check if an update was interrupted.
-    If staged chunks exist but update wasn't finalized, offer recovery.
-    Returns True if recovery attempted (user should check result).
+    At boot, check if an update was interrupted or failed.
+    If swap flag exists, restore backup and clear flag.
+    If staged chunks exist but update wasn't finalized, warn.
+    Returns True if recovery/warning needed (user should check result).
     """
+    # Check for interrupted swap (crash mid-update)
+    try:
+        with open(_OTA_SWAP_FLAG, "r") as f:
+            flag_text = f.read()
+        lines = flag_text.strip().split("\n")
+        flag_data = {}
+        for line in lines:
+            if "=" in line:
+                key, val = line.split("=", 1)
+                flag_data[key.strip()] = val.strip()
+
+        filename = flag_data.get("filename")
+        if filename in _UPDATEABLE_FILES:
+            target_path = _UPDATEABLE_FILES[filename]
+            backup_path = target_path + ".bak"
+
+            # Restore from backup
+            try:
+                with open(backup_path, "rb") as src:
+                    with open(target_path, "wb") as dst:
+                        dst.write(src.read())
+                print("OTA: recovered from failed swap, restored", filename)
+            except (OSError, IOError) as e:
+                print("OTA: recovery failed:", e)
+            finally:
+                # Clear the flag
+                try:
+                    os.remove(_OTA_SWAP_FLAG)
+                except OSError:
+                    pass
+
+        return True
+    except (OSError, IOError):
+        pass  # No swap flag, continue
+
+    # Check for incomplete update (chunks staged but not finalized)
     status = get_update_status()
     if status is None:
         return False
