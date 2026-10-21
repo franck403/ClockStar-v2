@@ -8,9 +8,15 @@
 # length-prefixed form '<len>:<content>' to safely embed ';' or '\n' inside
 # a string field (e.g. notification text) -- we only need to *parse* that
 # form here, not emit it, since everything we send to the phone is simple.
+#
+# OTA commands: otaBegin;filename;size;sha256 — start update
+#               otaChunk;idx;data — add chunk (binary, base64 or raw)
+#               otaEnd — finalize and swap
+#               otaCancel — discard staging
 
 
 import time
+import base64
 from ble_nus import BLEUart
 
 PROTOCOL_VERSION = "1"
@@ -78,7 +84,7 @@ def _field(parts, idx, default=""):
 class PhoneLink:
     def __init__(self, name="Clockstar", on_time=None, on_notif=None, on_notif_del=None,
                  on_call=None, on_call_stop=None, on_media_state=None, on_media_info=None,
-                 on_connect=None, on_disconnect=None, on_bond_status=None):
+                 on_connect=None, on_disconnect=None, on_bond_status=None, on_ota_begin=None):
         """
         All on_* callbacks are optional.
           on_time(unix_ts: int, tz_offset_min: int)
@@ -90,6 +96,7 @@ class PhoneLink:
           on_media_info(info: dict)    # {title, artist, album, app_id}
           on_connect() / on_disconnect()
           on_bond_status(encrypted: bool, bonded: bool)
+          on_ota_begin(filename: str, size: int, sha256: str) — optional, OTA update initiated
         """
         self._on_time = on_time
         self._on_notif = on_notif
@@ -101,10 +108,14 @@ class PhoneLink:
         self._user_on_connect = on_connect
         self._user_on_disconnect = on_disconnect
         self._user_on_bond_status = on_bond_status
+        self._on_ota_begin = on_ota_begin
 
         self._handshaken = False
         self.connected = False
         self.find_phone_active = False
+
+        # OTA state
+        self._ota_active = False
 
         self.uart = BLEUart(
             name=name,
@@ -312,3 +323,90 @@ class PhoneLink:
             }
             if self._on_media_info:
                 self._on_media_info(info)
+
+        elif command == "otaBegin" and len(parts) >= 4:
+            try:
+                filename = parts[1]
+                size = int(parts[2])
+                sha256 = parts[3].lower()
+            except (ValueError, IndexError):
+                print("DEBUG: otaBegin parse error:", parts)
+                self.uart.send_line("otaNack;invalid_params")
+                return
+
+            try:
+                import ota_update
+                if ota_update.begin_update(filename, size, sha256):
+                    self._ota_active = True
+                    self.uart.send_line("otaAck")
+                    if self._on_ota_begin:
+                        self._on_ota_begin(filename, size, sha256)
+                    print("DEBUG: OTA begin for", filename, "size=", size)
+                else:
+                    self.uart.send_line("otaNack;not_supported")
+            except Exception as e:
+                print("DEBUG: otaBegin error:", e)
+                self.uart.send_line("otaNack;internal_error")
+
+        elif command == "otaChunk" and len(parts) >= 3:
+            if not self._ota_active:
+                self.uart.send_line("otaNack;no_session")
+                return
+
+            try:
+                chunk_idx = int(parts[1])
+                # parts[2] is the data, may be base64 or raw binary
+                # Try base64 first, fallback to raw
+                data_str = parts[2]
+                try:
+                    data = base64.b64decode(data_str)
+                except Exception:
+                    data = data_str.encode("utf-8", "ignore") if isinstance(data_str, str) else data_str
+            except (ValueError, IndexError):
+                print("DEBUG: otaChunk parse error:", parts)
+                self.uart.send_line("otaNack;parse_error")
+                return
+
+            try:
+                import ota_update
+                if ota_update.add_chunk(chunk_idx, data):
+                    self.uart.send_line("otaAck")
+                    print("DEBUG: OTA chunk {} received ({} bytes)".format(chunk_idx, len(data)))
+                else:
+                    self.uart.send_line("otaNack;write_error")
+            except Exception as e:
+                print("DEBUG: otaChunk error:", e)
+                self.uart.send_line("otaNack;internal_error")
+
+        elif command == "otaEnd":
+            if not self._ota_active:
+                self.uart.send_line("otaNack;no_session")
+                return
+
+            self._ota_active = False
+            try:
+                import ota_update
+                success, msg = ota_update.finalize_update()
+                if success:
+                    self.uart.send_line("otaAck")
+                    print("DEBUG: OTA finalized successfully")
+                    # Optionally reboot after a brief delay
+                    import machine
+                    machine.reset()
+                else:
+                    self.uart.send_line("otaNack;" + msg.replace(" ", "_"))
+                    print("DEBUG: OTA finalize failed:", msg)
+            except Exception as e:
+                print("DEBUG: otaEnd error:", e)
+                self.uart.send_line("otaNack;finalize_error")
+
+        elif command == "otaCancel":
+            self._ota_active = False
+            try:
+                import ota_update
+                ota_update.cancel_update()
+                self.uart.send_line("otaAck")
+                print("DEBUG: OTA cancelled")
+            except Exception as e:
+                print("DEBUG: otaCancel error:", e)
+                self.uart.send_line("otaNack;cancel_error")

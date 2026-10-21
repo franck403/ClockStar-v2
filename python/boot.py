@@ -1,9 +1,18 @@
 import esp32
+import machine
 
 print("at boot:", esp32.idf_heap_info(esp32.HEAP_DATA))
+
+# Check for pending OTA update at boot
+try:
+    import ota_update
+    if ota_update.check_for_pending_update():
+        print("boot: WARNING - pending OTA update found, consider recovery")
+except Exception as e:
+    print("boot: OTA check error:", e)
+
 #
 #import bluetooth
-#import machine
 #import time
 
 #ble = bluetooth.BLE()
