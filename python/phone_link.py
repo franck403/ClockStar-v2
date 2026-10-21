@@ -1,3 +1,4 @@
+
 # phone_link.py
 # Implements the Clockstar v2 official-app BLE protocol on top of ble_nus.py.
 # Protocol reverse-derived from the public Clockstar-v2-Firmware source
@@ -6,7 +7,7 @@
 #
 # Wire format: '\n'-terminated lines, fields split on ';'. Fields may use a
 # length-prefixed form '<len>:<content>' to safely embed ';' or '\n' inside
-# a string field (e.g. notification text) -- we only need to *parse* that
+# a string field (e.g. notification text) -- we only need to parse that
 # form here, not emit it, since everything we send to the phone is simple.
 #
 # OTA commands: otaBegin;filename;size;sha256 — start update
@@ -14,19 +15,20 @@
 #               otaEnd — finalize and swap
 #               otaCancel — discard staging
 
-
 import time
-import base64
+import ubinascii
 from ble_nus import BLEUart
 
 PROTOCOL_VERSION = "1"
-FIRMWARE_VERSION = "v2.1"  # reported to the app; cosmetic, matches stock fw string
+FIRMWARE_VERSION = "v2.1"
 
-_TRUNCATED_MARKER = "\u2026"  # ellipsis
+_TRUNCATED_MARKER = "\u2026"
+
 
 def pause_advertising():
     BLEUart.pause_advertising()
-    
+
+
 def resume_advertising():
     BLEUart.resume_advertising()
 
@@ -35,6 +37,7 @@ def _split_protocol_msg(line, delim=";"):
     out = []
     i = 0
     n = len(line)
+
     while i < n:
         if line[i] == delim:
             out.append("")
@@ -44,6 +47,7 @@ def _split_protocol_msg(line, delim=";"):
         num_start = i
         value = 0
         is_number = False
+
         while i < n and line[i].isdigit():
             is_number = True
             value = value * 10 + int(line[i])
@@ -52,22 +56,26 @@ def _split_protocol_msg(line, delim=";"):
         if is_number and i < n and line[i] == ":":
             i += 1
             end = i + value
+
             if end > n:
-                # Declared length overruns the buffer -- truncated write.
-                # Take what we actually got instead of indexing past n.
                 out.append(line[i:n])
                 i = n
                 break
+
             out.append(line[i:end])
             i = end
+
             if i < n and line[i] == delim:
                 i += 1
         else:
             i = num_start
             start = i
+
             while i < n and line[i] != delim:
                 i += 1
+
             out.append(line[start:i])
+
             if i < n and line[i] == delim:
                 i += 1
 
@@ -82,21 +90,33 @@ def _field(parts, idx, default=""):
 
 
 class PhoneLink:
-    def __init__(self, name="Clockstar", on_time=None, on_notif=None, on_notif_del=None,
-                 on_call=None, on_call_stop=None, on_media_state=None, on_media_info=None,
-                 on_connect=None, on_disconnect=None, on_bond_status=None, on_ota_begin=None):
+    def __init__(
+        self,
+        name="Clockstar",
+        on_time=None,
+        on_notif=None,
+        on_notif_del=None,
+        on_call=None,
+        on_call_stop=None,
+        on_media_state=None,
+        on_media_info=None,
+        on_connect=None,
+        on_disconnect=None,
+        on_bond_status=None,
+        on_ota_begin=None,
+    ):
         """
         All on_* callbacks are optional.
           on_time(unix_ts: int, tz_offset_min: int)
-          on_notif(notif: dict)        # {id, title, message, app_id, category, truncated}
+          on_notif(notif: dict)
           on_notif_del(notif_id: int)
           on_call(call_id: int, name: str, number: str)
           on_call_stop(call_id: int)
-          on_media_state(state: str)   # "stopped" | "playing" | "paused"
-          on_media_info(info: dict)    # {title, artist, album, app_id}
+          on_media_state(state: str)
+          on_media_info(info: dict)
           on_connect() / on_disconnect()
           on_bond_status(encrypted: bool, bonded: bool)
-          on_ota_begin(filename: str, size: int, sha256: str) — optional, OTA update initiated
+          on_ota_begin(filename: str, size: int, sha256: str)
         """
         self._on_time = on_time
         self._on_notif = on_notif
@@ -113,8 +133,6 @@ class PhoneLink:
         self._handshaken = False
         self.connected = False
         self.find_phone_active = False
-
-        # OTA state
         self._ota_active = False
 
         self.uart = BLEUart(
@@ -126,10 +144,7 @@ class PhoneLink:
         )
 
     def poll(self):
-        """Call from the main loop. Drains everything ble_nus.py deferred
-        out of the BLE IRQ context -- connect/disconnect callbacks, bond
-        status updates, and incoming lines all get dispatched from here,
-        not from inside the radio's interrupt handler."""
+        """Dispatch deferred BLE callbacks and incoming lines."""
         self.uart.poll()
 
     @property
@@ -139,34 +154,32 @@ class PhoneLink:
     # ---- outgoing commands (watch -> phone) ----
 
     def notif_pos(self, notif_id):
-        if not self._handshaken:
-            return
-        self.uart.send_line("notifPos;%d" % notif_id)
+        if self._handshaken:
+            self.uart.send_line("notifPos;%d" % notif_id)
 
     def notif_neg(self, notif_id):
-        if not self._handshaken:
-            return
-        self.uart.send_line("notifNeg;%d" % notif_id)
+        if self._handshaken:
+            self.uart.send_line("notifNeg;%d" % notif_id)
 
     def call_reject(self, call_id):
-        if not self._handshaken:
-            return
-        self.uart.send_line("callReject;%d" % call_id)
+        if self._handshaken:
+            self.uart.send_line("callReject;%d" % call_id)
 
     def notif_list(self):
-        if not self._handshaken:
-            return
-        self.uart.send_line("notifList")
+        if self._handshaken:
+            self.uart.send_line("notifList")
 
     def find_phone_start(self):
         if not self._handshaken or self.find_phone_active:
             return
+
         self.uart.send_line("findPhoneStart")
         self.find_phone_active = True
 
     def find_phone_stop(self):
         if not self._handshaken or not self.find_phone_active:
             return
+
         self.uart.send_line("findPhoneStop")
         self.find_phone_active = False
 
@@ -187,15 +200,7 @@ class PhoneLink:
             self.uart.send_line("mediaPrev")
 
     def disconnect(self):
-        """Force-drop the current BLE connection, if any.
-
-        Used for the low-battery kill-switch: cuts the radio link to save
-        power once the charge is critically low. Advertising resumes
-        automatically afterward (handled in ble_nus.py's disconnect IRQ),
-        so a charger or a fresh connect attempt will still work -- this
-        just isn't allowed to keep servicing an active link below the
-        cutoff.
-        """
+        """Force-drop the current BLE connection."""
         self.uart.disconnect()
 
     # ---- internals ----
@@ -203,6 +208,7 @@ class PhoneLink:
     def _handle_connect(self):
         self.connected = True
         self._handshaken = False
+
         if self._user_on_connect:
             self._user_on_connect()
 
@@ -210,6 +216,7 @@ class PhoneLink:
         self.connected = False
         self._handshaken = False
         self.find_phone_active = False
+
         if self._user_on_disconnect:
             self._user_on_disconnect()
 
@@ -219,31 +226,36 @@ class PhoneLink:
 
     def _handle_line(self, line):
         line = line.strip()
+
         if not line:
             return
 
         parts = _split_protocol_msg(line)
         print("DEBUG: _handle_line raw:", line, "-> parts:", parts)
+
         if not parts:
             return
+
         command = parts[0]
 
         if command == "hello":
             if len(parts) < 2:
                 return
+
             phone_protocol_version = parts[1]
-            # Must reply with our version string or the app treats it as a
-            # mismatch and refuses to proceed.
-            self.uart.send_line("version;%s;%s" % (PROTOCOL_VERSION, FIRMWARE_VERSION))
+            self.uart.send_line(
+                "version;%s;%s" % (PROTOCOL_VERSION, FIRMWARE_VERSION)
+            )
+
             if phone_protocol_version == PROTOCOL_VERSION:
                 self._handshaken = True
-                # Stock firmware requests these right after connecting.
                 self.uart.send_line("time")
                 self.uart.send_line("notifList")
+
             return
 
         if not self._handshaken:
-            return  # ignore everything else until handshake completes
+            return
 
         if command == "time" and len(parts) >= 3:
             try:
@@ -252,24 +264,25 @@ class PhoneLink:
             except ValueError:
                 print("DEBUG: time command bad ints:", parts)
                 return
+
             print("DEBUG: time command parsed ts=", ts, "tz_offset=", tz_offset)
+
             if ts == 0:
                 print("DEBUG: time command ts==0, ignoring")
                 return
+
             if self._on_time:
                 self._on_time(ts, tz_offset)
 
         elif command == "notifAdd" and len(parts) >= 1:
-            # A truncated write commonly lands here with far fewer than the
-            # full 8 fields, or with the last field cut mid-string. We still
-            # want *something* useful on screen rather than a blank/garbled
-            # entry, so missing fields get an explicit placeholder instead
-            # of silently becoming "".
-            was_truncated = len(parts) < 4  # title/message didn't fully arrive
+            was_truncated = len(parts) < 4
+
             notif = {
                 "id": int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0,
                 "title": _field(parts, 2, "Notification"),
-                "message": _field(parts, 3, _TRUNCATED_MARKER if was_truncated else ""),
+                "message": _field(
+                    parts, 3, _TRUNCATED_MARKER if was_truncated else ""
+                ),
                 "app_id": _field(parts, 4),
                 "sender": _field(parts, 5),
                 "category": _field(parts, 6),
@@ -277,6 +290,7 @@ class PhoneLink:
                 "label_neg": _field(parts, 8),
                 "truncated": was_truncated,
             }
+
             if self._on_notif:
                 self._on_notif(notif)
 
@@ -290,6 +304,7 @@ class PhoneLink:
                 "category": _field(parts, 6),
                 "truncated": len(parts) < 4,
             }
+
             if self._on_notif:
                 self._on_notif(notif)
 
@@ -299,18 +314,24 @@ class PhoneLink:
 
         elif command == "callIncoming" and len(parts) >= 4:
             if self._on_call:
-                self._on_call(int(parts[1]) if parts[1].isdigit() else 0, parts[2], parts[3])
+                call_id = int(parts[1]) if parts[1].isdigit() else 0
+                self._on_call(call_id, parts[2], parts[3])
 
         elif command == "callIncomingStop" and len(parts) >= 2 and parts[1].isdigit():
             if self._on_call_stop:
                 self._on_call_stop(int(parts[1]))
 
-        elif command == "findPhoneStopAck" or command == "findPhoneStopNack":
+        elif command in ("findPhoneStopAck", "findPhoneStopNack"):
             self.find_phone_active = False
 
         elif command == "mediaState" and len(parts) >= 2:
-            state_map = {"0": "stopped", "1": "playing", "2": "paused"}
+            state_map = {
+                "0": "stopped",
+                "1": "playing",
+                "2": "paused",
+            }
             state = state_map.get(parts[1], "stopped")
+
             if self._on_media_state:
                 self._on_media_state(state)
 
@@ -321,6 +342,7 @@ class PhoneLink:
                 "album": _field(parts, 3),
                 "app_id": _field(parts, 4),
             }
+
             if self._on_media_info:
                 self._on_media_info(info)
 
@@ -336,14 +358,18 @@ class PhoneLink:
 
             try:
                 import ota_update
+
                 if ota_update.begin_update(filename, size, sha256):
                     self._ota_active = True
                     self.uart.send_line("otaAck")
+
                     if self._on_ota_begin:
                         self._on_ota_begin(filename, size, sha256)
+
                     print("DEBUG: OTA begin for", filename, "size=", size)
                 else:
                     self.uart.send_line("otaNack;not_supported")
+
             except Exception as e:
                 print("DEBUG: otaBegin error:", e)
                 self.uart.send_line("otaNack;internal_error")
@@ -355,13 +381,19 @@ class PhoneLink:
 
             try:
                 chunk_idx = int(parts[1])
-                # parts[2] is the data, may be base64 or raw binary
-                # Try base64 first, fallback to raw
                 data_str = parts[2]
+
+                # Decode Base64 using MicroPython's ubinascii module.
+                # If decoding fails, preserve the original string as bytes.
                 try:
-                    data = base64.b64decode(data_str)
-                except Exception:
-                    data = data_str.encode("utf-8", "ignore") if isinstance(data_str, str) else data_str
+                    data = ubinascii.a2b_base64(data_str)
+                except (ValueError, TypeError):
+                    data = (
+                        data_str.encode("utf-8")
+                        if isinstance(data_str, str)
+                        else data_str
+                    )
+
             except (ValueError, IndexError):
                 print("DEBUG: otaChunk parse error:", parts)
                 self.uart.send_line("otaNack;parse_error")
@@ -369,11 +401,17 @@ class PhoneLink:
 
             try:
                 import ota_update
+
                 if ota_update.add_chunk(chunk_idx, data):
                     self.uart.send_line("otaAck")
-                    print("DEBUG: OTA chunk {} received ({} bytes)".format(chunk_idx, len(data)))
+                    print(
+                        "DEBUG: OTA chunk {} received ({} bytes)".format(
+                            chunk_idx, len(data)
+                        )
+                    )
                 else:
                     self.uart.send_line("otaNack;write_error")
+
             except Exception as e:
                 print("DEBUG: otaChunk error:", e)
                 self.uart.send_line("otaNack;internal_error")
@@ -384,29 +422,36 @@ class PhoneLink:
                 return
 
             self._ota_active = False
+
             try:
                 import ota_update
+
                 success, msg = ota_update.finalize_update()
+
                 if success:
                     self.uart.send_line("otaAck")
                     print("DEBUG: OTA finalized successfully")
-                    # Optionally reboot after a brief delay
+
                     import machine
                     machine.reset()
                 else:
                     self.uart.send_line("otaNack;" + msg.replace(" ", "_"))
                     print("DEBUG: OTA finalize failed:", msg)
+
             except Exception as e:
                 print("DEBUG: otaEnd error:", e)
                 self.uart.send_line("otaNack;finalize_error")
 
         elif command == "otaCancel":
             self._ota_active = False
+
             try:
                 import ota_update
+
                 ota_update.cancel_update()
                 self.uart.send_line("otaAck")
                 print("DEBUG: OTA cancelled")
+
             except Exception as e:
                 print("DEBUG: otaCancel error:", e)
                 self.uart.send_line("otaNack;cancel_error")
